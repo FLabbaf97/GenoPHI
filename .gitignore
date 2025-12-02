@@ -102,9 +102,11 @@ tests/test_outputs/
 data/test_data/test_shap_output/
 
 # Model files (large binaries - optionally uncomment if not tracking)
-# *.pkl
-# *.joblib
-# *.h5
+*.pkl
+*.joblib
+*.h5
 
 # Planning documents
 PLAN_*.md
+
+results/
