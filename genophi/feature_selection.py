@@ -45,26 +45,27 @@ def load_and_prepare_data(input_path, sample_column=None, phenotype_column=None,
         print("No missing values found.")
     full_feature_table = full_feature_table.reset_index(drop=True)
 
-    # Prepare the feature set and drop unnecessary columns
-    drop_columns = ['strain', 'phage', 'interaction', 'header', 'contig_id', 'orf_ko', filter_type]
-    
-    # Ensure the sample and phenotype columns are retained if specified
-    if sample_column:
-        drop_columns.remove('strain')  # Keep 'strain' or replace with sample_column
-        drop_columns.append(sample_column)  # Add custom sample column if provided
-    
-    if phenotype_column:
-        drop_columns.remove('interaction')  # Keep 'interaction' or replace with phenotype_column
-        drop_columns.append(phenotype_column)  # Add custom phenotype column if provided
-
-    X = full_feature_table.drop(drop_columns, axis=1, errors='ignore')
-    
-    # Determine the target variable (default 'interaction' or custom phenotype_column)
+    # 1. Identify Target Column First
     target_column = phenotype_column if phenotype_column else 'interaction'
+    if target_column not in full_feature_table.columns:
+         raise ValueError(f"Target column '{target_column}' not found in input data.")
     y = full_feature_table[target_column]
+
+    # 2. Define Columns to Drop (Metadata + Target)
+    drop_columns = ['strain', 'phage', 'header', 'contig_id', 'orf_ko', filter_type, target_column]
+    
+    # Handle sample column logic
+    if sample_column and sample_column != 'strain':
+        drop_columns.append(sample_column)
+    elif 'strain' not in drop_columns: # Ensure strain is dropped if it is the sample column
+        drop_columns.append('strain')
+
+    X = full_feature_table.drop(columns=drop_columns, errors='ignore')
+    X = X.select_dtypes(include=[np.number])
 
     print(f"Number of positive samples: {y.sum()}")
     print(f"Number of negative samples: {len(y) - y.sum()}")
+    print(f"Final feature count: {X.shape[1]}")
     print("Data loaded and prepared, split into features and target.")
     
     return X, y, full_feature_table
