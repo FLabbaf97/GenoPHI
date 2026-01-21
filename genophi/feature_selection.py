@@ -1594,6 +1594,16 @@ def generate_feature_tables(
     features_occurrence_df = pd.DataFrame(list(features_occurrence.items()), columns=['Feature', 'Occurrence'])
     features_occurrence_df.sort_values(by='Occurrence', ascending=False, inplace=True)
 
+    # Validate and convert max_features if it is passed as a string (e.g., from CLI args)
+    if isinstance(max_features, str):
+        if max_features.lower() == 'none':
+            max_features = None
+        else:
+            try:
+                max_features = float(max_features)
+            except ValueError:
+                logging.warning(f"Invalid max_features value: {max_features}. Using default calculation.")
+                max_features = None
 
     min_features = 5 if interaction_count < 500 else 20
     if max_features is None:
