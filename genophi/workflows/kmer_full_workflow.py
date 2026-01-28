@@ -352,7 +352,8 @@ def run_kmer_workflow(
     strain_column='strain', 
     phage_column='phage', 
     sample_column='strain', 
-    phenotype_column='interaction', 
+    phenotype_column='interaction',
+    modeling=True,
     num_features=100, 
     filter_type='strain', 
     num_runs_fs=10, 
@@ -495,7 +496,7 @@ def run_kmer_workflow(
             remove_suffix=remove_suffix,
             sample_column=sample_column,
             phenotype_column=phenotype_column,
-            modeling=True,  # Always run modeling in this workflow
+            modeling=modeling,
             filter_type=filter_type,  # Essential for train-test split functionality
             num_features=num_features,
             num_runs_fs=num_runs_fs,
@@ -676,6 +677,8 @@ def main():
                                   help="Task type for modeling (default: classification).")
     fs_modeling_group.add_argument('--max_features', default='none', 
                                   help='Maximum number of features to include.')
+    fs_modeling_group.add_argument('--no-modeling', action='store_false', dest='modeling', 
+                                  help="Skip the feature selection and modeling steps.")
 
     # Advanced feature selection parameters
     advanced_group = parser.add_argument_group('Advanced feature selection')
@@ -725,6 +728,8 @@ def main():
     general_group.add_argument('--max_ram', type=float, default=8, 
                               help='Maximum RAM usage in GB (default: 8).')
 
+    parser.set_defaults(modeling=True)
+
     args = parser.parse_args()
 
     # Run the full k-mer workflow
@@ -746,6 +751,7 @@ def main():
         phenotype_column=args.phenotype_column,
         num_features=args.num_features,
         filter_type=args.filter_type,
+        modeling=args.modeling,
         num_runs_fs=args.num_runs_fs,
         num_runs_modeling=args.num_runs_modeling,
         method=args.method,

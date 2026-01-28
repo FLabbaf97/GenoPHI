@@ -622,6 +622,8 @@ def create_parser():
                    help='Directory with phage FASTA files (optional)')
     p.add_argument('--phenotype_matrix', '-pm', required=True,
                    help='Path to phenotype matrix')
+    p.add_argument('--no-modeling', action='store_false', dest='modeling',
+                   help='Generate feature tables but skip feature selection and modeling steps')
     p.add_argument('--output', '-o', required=True,
                    help='Output directory')
     p.add_argument('--k', type=int, default=5,
@@ -677,6 +679,7 @@ def create_parser():
     p.add_argument('--check_feature_presence', action='store_true')
     p.add_argument('--filter_by_cluster_presence', action='store_true')
     p.add_argument('--min_cluster_presence', type=int, default=2)
+    p.set_defaults(modeling=True)
     add_common_args(p)
     
     # KMER-ASSIGN-FEATURES - Assign k-mer features to new genomes
@@ -1172,7 +1175,8 @@ def run_kmer_workflow(args):
         weights_method=args.weights_method,
         check_feature_presence=args.check_feature_presence,
         filter_by_cluster_presence=args.filter_by_cluster_presence,
-        min_cluster_presence=args.min_cluster_presence
+        min_cluster_presence=args.min_cluster_presence,
+        modeling=args.modeling
     )
 
 
