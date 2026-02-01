@@ -109,6 +109,9 @@ def model_testing_select_MCC(
     """
     start_time = time.time()
 
+    # Set global random seed for full reproducibility
+    np.random.seed(random_state)
+
     # Load and prepare data
     X, y, full_feature_table = load_and_prepare_data(input, sample_column, phenotype_column, filter_type=set_filter)
     X_train, X_test, y_train, y_test, X_test_sample_ids, X_train_sample_ids = filter_data(
@@ -580,6 +583,8 @@ def run_experiments(
                 if not os.path.exists(output_dir):
                     os.makedirs(output_dir)
                 random_state = i
+                # Set global random seeds for full reproducibility
+                np.random.seed(random_state)
 
                 model_performance_path = os.path.join(output_dir, 'model_performance.csv')
                 if not os.path.exists(model_performance_path):

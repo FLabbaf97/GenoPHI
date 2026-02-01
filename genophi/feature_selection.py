@@ -316,7 +316,8 @@ def filter_data(
             logging.warning("No matching feature columns found for cluster/group-based filtering")
 
     # ---- 5️⃣ Perform Group-Based Splitting (Clustering or Normal) ----
-    groups = full_feature_table[group_col].unique()
+    # Sort groups to ensure deterministic order (pandas unique() order is not guaranteed)
+    groups = np.sort(full_feature_table[group_col].unique())
 
     # Calculate group/cluster sizes for sample-based splitting
     group_sizes = {}
@@ -829,7 +830,7 @@ def chi_squared_feature_selection(X_train, y_train, num_features):
     print(f"Chi-Squared Test selected {len(selected_features)} features.")
     return X_train_selected, selected_features
 
-def lasso_feature_selection(X_train, y_train, num_features, task_type='classification'):
+def lasso_feature_selection(X_train, y_train, num_features, task_type='classification', random_state=42):
     """
     Selects top features using Lasso regularization for classification or regression.
 
@@ -838,6 +839,7 @@ def lasso_feature_selection(X_train, y_train, num_features, task_type='classific
         y_train (Series): Training target.
         num_features (int): Number of top features to select.
         task_type (str): Task type ('classification' or 'regression').
+        random_state (int): Random seed for reproducibility.
 
     Returns:
         X_train_selected (DataFrame): Transformed training features with selected features.
@@ -847,9 +849,9 @@ def lasso_feature_selection(X_train, y_train, num_features, task_type='classific
 
     # Choose model based on task type
     if task_type == 'classification':
-        model = LogisticRegression(penalty='l1', solver='liblinear', max_iter=1000)
+        model = LogisticRegression(penalty='l1', solver='liblinear', max_iter=1000, random_state=random_state)
     elif task_type == 'regression':
-        model = Lasso(max_iter=1000)
+        model = Lasso(max_iter=1000, random_state=random_state)
     else:
         raise ValueError("task_type must be 'classification' or 'regression'")
     
@@ -1444,6 +1446,8 @@ def run_feature_selection_iterations(
             if not os.path.exists(output_dir):
                 os.makedirs(output_dir)
             random_state = i
+            # Set global random seeds for full reproducibility
+            np.random.seed(random_state)
 
             X, y, full_feature_table = load_and_prepare_data(input_path, sample_column=sample_column, phenotype_column=phenotype_column, filter_type=filter_type)
             X_train, X_test, y_train, y_test, X_test_sample_ids, X_train_sample_ids = filter_data(
@@ -1483,7 +1487,7 @@ def run_feature_selection_iterations(
             elif method == 'chi_squared' and task_type == 'classification':
                 X_train, selected_features = chi_squared_feature_selection(X_train, y_train, num_features)
             elif method == 'lasso':
-                X_train, selected_features = lasso_feature_selection(X_train, y_train, num_features, task_type=task_type)
+                X_train, selected_features = lasso_feature_selection(X_train, y_train, num_features, task_type=task_type, random_state=random_state)
             elif method == 'shap':
                 X_train, selected_features = shap_feature_selection(X_train, y_train, num_features, threads, task_type=task_type, max_ram=max_ram, random_state=random_state)
             else:
