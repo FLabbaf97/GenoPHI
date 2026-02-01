@@ -339,7 +339,7 @@ def run_mmseqs_cluster(db_name, output_dir, tmp_dir, coverage, min_seq_id, sensi
     cluster_command = (
         f"mmseqs cluster {db_name} {cluster_output} {tmp_dir} "
         f"-c {coverage} --min-seq-id {min_seq_id} -s {sensitivity} "
-        f"--threads {threads} --shuffle 0 -v 3"
+        f"--threads {threads} -v 3"
     )
     subprocess.run(cluster_command, shell=True, check=True)
     logging.info("Clustering completed successfully.")
@@ -384,7 +384,7 @@ def assign_sequences_to_clusters(db_name, output_dir, tmp_dir, coverage, min_seq
     search_command = (
         f"mmseqs search {db_name} {db_name} {result_db} {tmp_dir} "
         f"-c {coverage} --min-seq-id {min_seq_id} -s {sensitivity} "
-        f"--threads {threads} --shuffle 0 -v 3"
+        f"--threads {threads} -v 3"
     )
     subprocess.run(search_command, shell=True, check=True)
     logging.info("Sequence assignment completed successfully.")
