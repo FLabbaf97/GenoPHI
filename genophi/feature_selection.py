@@ -1585,7 +1585,7 @@ def generate_feature_tables(
     interaction_count = full_feature_table.shape[0]
     print('Interaction count:', interaction_count)
 
-    run_dirs = [x for x in os.listdir(model_testing_dir) if 'run' in x]
+    run_dirs = sorted([x for x in os.listdir(model_testing_dir) if 'run' in x])
     features_occurrence = {}
 
     for run in run_dirs:

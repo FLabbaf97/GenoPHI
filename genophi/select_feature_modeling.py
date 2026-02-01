@@ -285,13 +285,13 @@ def parse_model_predictions_and_performance(model_dir, task_type='classification
         raise ValueError("Invalid task_type. Must be 'classification' or 'regression'.")
 
     # Get all cutoff subdirectories (excluding CSV files)
-    cut_offs = [x for x in os.listdir(model_dir) if '.csv' not in x]
+    cut_offs = sorted([x for x in os.listdir(model_dir) if '.csv' not in x])
 
     # Loop through each cutoff directory and parse run directories
     for cut_off in cut_offs:
         print(f"Parsing cut-off: {cut_off}")
         cut_off_dir = os.path.join(model_dir, cut_off)
-        run_dirs = [x for x in os.listdir(cut_off_dir) if 'run' in x]
+        run_dirs = sorted([x for x in os.listdir(cut_off_dir) if 'run' in x])
 
         # Parse predictions from each run
         for run in run_dirs:
@@ -550,7 +550,7 @@ def run_experiments(
     """
     start_total_time = time.time()
     if os.path.isdir(input_dir):
-        feature_tables = os.listdir(input_dir)
+        feature_tables = sorted(os.listdir(input_dir))
     else:
         feature_tables = [os.path.basename(input_dir)]
 

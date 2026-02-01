@@ -62,7 +62,7 @@ def detect_duplicate_ids(input_path, suffix='faa', strains_to_process=None, inpu
     protein_id_tracker = defaultdict(set)
 
     if input_type == 'directory':
-        file_list = os.listdir(input_path)
+        file_list = sorted(os.listdir(input_path))
     elif input_type == 'file':
         file_list = [input_path]
     else:
@@ -103,7 +103,7 @@ def modify_duplicate_ids(input_path, output_dir, suffix='faa', strains_to_proces
     modified_file_dir = os.path.join(output_dir, 'modified_AAs', strain_column)
     os.makedirs(modified_file_dir, exist_ok=True)
 
-    for file_name in os.listdir(input_path):
+    for file_name in sorted(os.listdir(input_path)):
         if file_name.endswith(suffix):
             strain_name = file_name.replace(f".{suffix}", "")
             if strains_to_process and strain_name not in strains_to_process:
@@ -146,7 +146,8 @@ def create_mmseqs_database(input_path, db_name, suffix, input_type, strains, thr
     strains = [str(s) for s in strains] if strains else None
     if input_type == 'directory':
         logging.info(f"Searching for FASTA files with suffix '{suffix}' in {input_path}.")
-        for fasta in os.listdir(input_path):
+        # Sort to ensure deterministic order (os.listdir order is not guaranteed)
+        for fasta in sorted(os.listdir(input_path)):
             if fasta.endswith(suffix):
                 strain_name = fasta.replace(f".{suffix}", "")
                 if strains is None or strain_name in strains:
@@ -338,7 +339,7 @@ def run_mmseqs_cluster(db_name, output_dir, tmp_dir, coverage, min_seq_id, sensi
     cluster_command = (
         f"mmseqs cluster {db_name} {cluster_output} {tmp_dir} "
         f"-c {coverage} --min-seq-id {min_seq_id} -s {sensitivity} "
-        f"--threads {threads} -v 3"
+        f"--threads {threads} --shuffle 0 -v 3"
     )
     subprocess.run(cluster_command, shell=True, check=True)
     logging.info("Clustering completed successfully.")
@@ -383,7 +384,7 @@ def assign_sequences_to_clusters(db_name, output_dir, tmp_dir, coverage, min_seq
     search_command = (
         f"mmseqs search {db_name} {db_name} {result_db} {tmp_dir} "
         f"-c {coverage} --min-seq-id {min_seq_id} -s {sensitivity} "
-        f"--threads {threads} -v 3"
+        f"--threads {threads} --shuffle 0 -v 3"
     )
     subprocess.run(search_command, shell=True, check=True)
     logging.info("Sequence assignment completed successfully.")
@@ -743,7 +744,7 @@ def run_clustering_workflow(input_path, output_dir, tmp_dir="tmp", min_seq_id=0.
         fasta_files = []
         strains = [str(s) for s in strains_to_process] if strains_to_process else None
         if input_type == 'directory':
-            for fasta in os.listdir(input_path):
+            for fasta in sorted(os.listdir(input_path)):
                 if fasta.endswith(suffix):
                     strain_name = fasta.replace(f".{suffix}", "")
                     if strains is None or strain_name in strains:
