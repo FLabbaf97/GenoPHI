@@ -307,14 +307,16 @@ def create_contig_to_genome_dict(fasta_files, input_type, suffix='faa'):
             genome_list.append(genome_name)
             for record in SeqIO.parse(fasta, "fasta"):
                 contig_to_genome[record.id] = genome_name
+        # Sort genome_list to ensure deterministic order (even though fasta_files is sorted)
+        genome_list = sorted(genome_list)
     else:
         for record in SeqIO.parse(fasta_files[0], "fasta"):
             protein_id = record.id
             genome_name = '_'.join(protein_id.split(' # ')[0].split('_')[:-1])
             genome_list.append(genome_name)
             contig_to_genome[protein_id] = genome_name
-        genome_list = list(set(genome_list))
-    
+        genome_list = sorted(list(set(genome_list)))
+
     logging.info(f"Created contig to genome dictionary with {len(contig_to_genome)} entries.")
     return contig_to_genome, genome_list
 
@@ -494,6 +496,12 @@ def generate_presence_absence_matrix(best_hits_tsv, output_csv_path, contig_to_g
         presence_absence_data[cluster_id] = [1 if genome in genomes else 0 for genome in genome_list]
 
     presence_absence_df = pd.DataFrame(presence_absence_data)
+
+    # Sort columns to ensure deterministic order (cluster_dict iteration order depends on insertion order)
+    # Keep 'Genome' as first column, sort all cluster columns
+    cluster_columns = sorted([col for col in presence_absence_df.columns if col != 'Genome'])
+    presence_absence_df = presence_absence_df[['Genome'] + cluster_columns]
+
     presence_absence_df.to_csv(output_csv_path, index=False)
     logging.info(f"Presence-absence matrix saved to {output_csv_path}")
 
@@ -637,9 +645,13 @@ def feature_assignment(genome_assignments, selected_features, genome_column_name
 
     # Create the feature table in wide format using pivot_table
     feature_table = assignment_df.pivot_table(index=genome_column_name, columns="Feature", aggfunc="size", fill_value=0)
-    
+
     # Reset the index to turn the genome_column_name (strain/phage) back into a regular column
     feature_table = feature_table.reset_index()
+
+    # Sort feature columns to ensure deterministic order
+    feature_columns = sorted([col for col in feature_table.columns if col != genome_column_name])
+    feature_table = feature_table[[genome_column_name] + feature_columns]
 
     return assignment_df, feature_table
 
