@@ -289,25 +289,30 @@ def calculate_coverage(df):
     return cov_df
 
 def identify_segments(df):
-    """Identifies segments (0=Uncovered, 1=Covered, 2=Gap)."""
+    """Identifies segments (0=Uncovered, 1=Covered).
+
+    Gaps within covered regions are included in the covered segment.
+    Only uncovered positions cause segment breaks.
+    """
     logging.info("Identifying segments...")
     if df.empty: return pd.DataFrame()
-    
+
     df = df.sort_values(by=['Feature', 'protein_ID', 'AA_index'])
-    
-    # Segment type logic
+
+    # Segment type logic: covered (1) vs uncovered (0)
+    # Gaps within covered regions are treated as covered
     df['segment_type'] = df['coverage']
-    df.loc[df['is_gap'] == 1, 'segment_type'] = 2
-    
-    df['prev_type'] = df.groupby(['Feature', 'protein_ID'])['segment_type'].shift(1).fillna(-1)
-    df['segment_change'] = (df['segment_type'] != df['prev_type'])
+
+    # Identify segment changes: only when coverage changes (gaps don't cause changes)
+    df['prev_coverage'] = df.groupby(['Feature', 'protein_ID'])['coverage'].shift(1).fillna(-1)
+    df['segment_change'] = (df['coverage'] != df['prev_coverage'])
     df['segment_id'] = df.groupby(['Feature', 'protein_ID'])['segment_change'].cumsum()
-    
+
     segments = df.groupby(['Feature', 'protein_ID', 'cluster_id', 'segment_type', 'segment_id']).agg(
         start=('AA_index', 'min'),
         stop=('AA_index', 'max')
     ).reset_index()
-    
+
     return segments
 
 # ==========================
