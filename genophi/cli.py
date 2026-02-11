@@ -824,6 +824,9 @@ def create_parser():
                    help='Path to the feature-to-cluster mapping file (CSV)')
     p.add_argument('--protein_families_file', required=False, # CHANGED TO FALSE
                    help='Path to the protein families file (CSV). Required unless --ignore_families is set.')
+    p.add_argument('--genome_mapping_file', required=False,
+                   help='Path to genome/strain mapping file (CSV with protein_ID and genome columns). '
+                        'Optional for ignore_families mode to add genome information to output.')
     p.add_argument('--output_dir', '-o', required=True,
                    help='Directory where output files/plots will be saved')
     p.add_argument('--feature_type', default='strain', choices=['strain', 'phage', 'host'],
@@ -1372,7 +1375,8 @@ def run_kmer_analysis(args):
         annotation_file=args.annotation_file,
         model_output_dir=args.model_output_dir,
         quick_run=args.quick_run,
-        ignore_families=args.ignore_families
+        ignore_families=args.ignore_families,
+        genome_mapping_file=args.genome_mapping_file
     )
 
 def main():

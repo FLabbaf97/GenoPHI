@@ -28,7 +28,8 @@ def kmer_analysis_workflow(
     annotation_file=None,
     model_output_dir=None,
     quick_run=False,
-    ignore_families=False
+    ignore_families=False,
+    genome_mapping_file=None
 ):
     """
     Workflow that supports both standard protein family alignment 
@@ -179,18 +180,59 @@ def kmer_analysis_workflow(
         covered_segments[['segment_sequence', 'segment_sequence_nogaps', 'segment_length', 'aa_count']] = \
             covered_segments.apply(extract_segment_seq, axis=1)
 
-        # Add phage/genome information
-        covered_segments = covered_segments.merge(
-            full_df[['protein_ID', feature_type]].drop_duplicates(),
-            on='protein_ID',
-            how='left'
-        )
-        covered_segments = covered_segments.rename(columns={feature_type: 'phage'})
+        # Add genome/strain information (if available)
+        genome_col_added = False
 
-        # Select and reorder columns
-        output_cols = ['Feature', 'phage', 'protein_ID', 'cluster_id',
-                       'segment_sequence_nogaps', 'segment_sequence',
-                       'start', 'stop', 'segment_length', 'aa_count']
+        if feature_type in full_df.columns:
+            # Standard mode: feature_type already in full_df (from protein_families_file)
+            covered_segments = covered_segments.merge(
+                full_df[['protein_ID', feature_type]].drop_duplicates(),
+                on='protein_ID',
+                how='left'
+            )
+            covered_segments = covered_segments.rename(columns={feature_type: 'genome'})
+            genome_col_added = True
+
+        elif genome_mapping_file and os.path.exists(genome_mapping_file):
+            # Ignore_families mode: load from separate genome_mapping_file
+            logging.info(f"Loading genome/strain mapping from {genome_mapping_file}")
+            try:
+                mapping_df = pd.read_csv(genome_mapping_file)
+
+                # Look for genome column with flexible naming
+                possible_cols = ['phage', 'genome', 'strain', 'species', 'genus', feature_type]
+                found_col = None
+                for col in possible_cols:
+                    if col in mapping_df.columns:
+                        found_col = col
+                        break
+
+                if found_col and 'protein_ID' in mapping_df.columns:
+                    genome_mapping = mapping_df[['protein_ID', found_col]].drop_duplicates()
+                    covered_segments = covered_segments.merge(genome_mapping, on='protein_ID', how='left')
+                    covered_segments = covered_segments.rename(columns={found_col: 'genome'})
+                    genome_col_added = True
+                    logging.info(f"Added genome information from column '{found_col}'")
+                else:
+                    logging.warning(f"No suitable genome column found in {genome_mapping_file}. Skipping.")
+            except Exception as e:
+                logging.warning(f"Failed to load genome mapping: {e}")
+
+        else:
+            logging.info(f"No genome/strain information available. Skipping this column in output.")
+
+        # Select and reorder columns (conditionally include 'genome' if available)
+        if genome_col_added:
+            output_cols = ['Feature', 'genome', 'protein_ID', 'cluster_id',
+                           'segment_sequence_nogaps', 'segment_sequence',
+                           'start', 'stop', 'segment_length', 'aa_count']
+            sort_cols = ['Feature', 'genome', 'protein_ID', 'start']
+        else:
+            output_cols = ['Feature', 'protein_ID', 'cluster_id',
+                           'segment_sequence_nogaps', 'segment_sequence',
+                           'start', 'stop', 'segment_length', 'aa_count']
+            sort_cols = ['Feature', 'protein_ID', 'start']
+
         output_cols = [col for col in output_cols if col in covered_segments.columns]
         covered_segments_output = covered_segments[output_cols].copy()
 
@@ -202,9 +244,7 @@ def kmer_analysis_workflow(
             logging.info(f"Removed {n_before - n_after} duplicate covered segments")
 
         # Sort for readability
-        covered_segments_output = covered_segments_output.sort_values(
-            ['Feature', 'phage', 'protein_ID', 'start']
-        )
+        covered_segments_output = covered_segments_output.sort_values(sort_cols)
 
         # SAVE OUTPUT
         covered_segments_output.to_csv(
