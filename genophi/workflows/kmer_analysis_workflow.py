@@ -147,13 +147,74 @@ def kmer_analysis_workflow(
     
     # 7. Segments & Plotting
     segments_df = identify_segments(coverage_df)
-    
+
     # SAVE OUTPUT
     segments_df.to_csv(os.path.join(type_output_dir, 'segments_df.csv'), index=False)
-    
+
     plot_dir = os.path.join(type_output_dir, 'plots')
     plot_segments(segments_df, plot_dir)
-    
+
+    # 7.5. Extract segment sequences for covered segments
+    logging.info("Extracting segment sequences for covered segments...")
+    covered_segments = segments_df[segments_df['segment_type'] == 1].copy()
+
+    if not covered_segments.empty:
+        # Merge with aligned sequences
+        covered_segments = covered_segments.merge(
+            final_aligned_df[['protein_ID', 'aln_sequence']].drop_duplicates(),
+            on='protein_ID',
+            how='left'
+        )
+
+        # Extract segment sequences (with and without gaps)
+        def extract_segment_seq(row):
+            if pd.isna(row['aln_sequence']):
+                return pd.Series(['', '', 0, 0])
+            segment_with_gaps = row['aln_sequence'][row['start']:row['stop']+1]
+            segment_no_gaps = segment_with_gaps.replace('-', '')
+            segment_length = row['stop'] - row['start'] + 1
+            aa_count = len(segment_no_gaps)
+            return pd.Series([segment_with_gaps, segment_no_gaps, segment_length, aa_count])
+
+        covered_segments[['segment_sequence', 'segment_sequence_nogaps', 'segment_length', 'aa_count']] = \
+            covered_segments.apply(extract_segment_seq, axis=1)
+
+        # Add phage/genome information
+        covered_segments = covered_segments.merge(
+            full_df[['protein_ID', feature_type]].drop_duplicates(),
+            on='protein_ID',
+            how='left'
+        )
+        covered_segments = covered_segments.rename(columns={feature_type: 'phage'})
+
+        # Select and reorder columns
+        output_cols = ['Feature', 'phage', 'protein_ID', 'cluster_id',
+                       'segment_sequence_nogaps', 'segment_sequence',
+                       'start', 'stop', 'segment_length', 'aa_count']
+        output_cols = [col for col in output_cols if col in covered_segments.columns]
+        covered_segments_output = covered_segments[output_cols].copy()
+
+        # Drop duplicates
+        n_before = len(covered_segments_output)
+        covered_segments_output = covered_segments_output.drop_duplicates()
+        n_after = len(covered_segments_output)
+        if n_before > n_after:
+            logging.info(f"Removed {n_before - n_after} duplicate covered segments")
+
+        # Sort for readability
+        covered_segments_output = covered_segments_output.sort_values(
+            ['Feature', 'phage', 'protein_ID', 'start']
+        )
+
+        # SAVE OUTPUT
+        covered_segments_output.to_csv(
+            os.path.join(type_output_dir, 'covered_segments_with_sequences.csv'),
+            index=False
+        )
+        logging.info(f"Saved {len(covered_segments_output)} covered segments with sequences")
+    else:
+        logging.warning("No covered segments found to extract sequences from")
+
     # 8. Optional SHAP
     if model_output_dir:
         shap_df = aggregate_shap_values(model_output_dir)
