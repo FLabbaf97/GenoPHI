@@ -170,15 +170,34 @@ def kmer_analysis_workflow(
         # Extract segment sequences (with and without gaps)
         def extract_segment_seq(row):
             if pd.isna(row['aln_sequence']):
-                return pd.Series(['', '', 0, 0])
-            segment_with_gaps = row['aln_sequence'][row['start']:row['stop']+1]
-            segment_no_gaps = segment_with_gaps.replace('-', '')
-            segment_length = row['stop'] - row['start'] + 1
-            aa_count = len(segment_no_gaps)
-            return pd.Series([segment_with_gaps, segment_no_gaps, segment_length, aa_count])
+                return pd.Series(['', '', 0, 0, 0, 0])
 
-        covered_segments[['segment_sequence', 'segment_sequence_nogaps', 'segment_length', 'aa_count']] = \
+            aln_seq = row['aln_sequence']
+            start_aln = row['start']
+            stop_aln = row['stop']
+
+            # Extract segment with gaps
+            segment_with_gaps = aln_seq[start_aln:stop_aln+1]
+            segment_no_gaps = segment_with_gaps.replace('-', '')
+            segment_length = stop_aln - start_aln + 1
+            aa_count = len(segment_no_gaps)
+
+            # Calculate ungapped positions (positions in the original gene, not alignment)
+            # Count non-gap characters before the start and stop positions
+            start_ungapped = sum(1 for c in aln_seq[:start_aln] if c != '-')
+            stop_ungapped = sum(1 for c in aln_seq[:stop_aln+1] if c != '-') - 1
+
+            return pd.Series([segment_with_gaps, segment_no_gaps, segment_length, aa_count, start_ungapped, stop_ungapped])
+
+        covered_segments[['segment_sequence', 'segment_sequence_nogaps', 'segment_length', 'aa_count', 'start_ungapped', 'stop_ungapped']] = \
             covered_segments.apply(extract_segment_seq, axis=1)
+
+        # Add full ungapped protein sequences
+        covered_segments = covered_segments.merge(
+            aa_sequences_df[['protein_ID', 'sequence']].drop_duplicates().rename(columns={'sequence': 'full_sequence'}),
+            on='protein_ID',
+            how='left'
+        )
 
         # Add genome/strain information (if available)
         genome_col_added = False
@@ -225,13 +244,17 @@ def kmer_analysis_workflow(
         if genome_col_added:
             output_cols = ['Feature', 'genome', 'protein_ID', 'cluster_id',
                            'segment_sequence_nogaps', 'segment_sequence',
-                           'start', 'stop', 'segment_length', 'aa_count']
-            sort_cols = ['Feature', 'genome', 'protein_ID', 'start']
+                           'start_ungapped', 'stop_ungapped', 'aa_count',
+                           'full_sequence',
+                           'start', 'stop', 'segment_length']
+            sort_cols = ['Feature', 'genome', 'protein_ID', 'start_ungapped']
         else:
             output_cols = ['Feature', 'protein_ID', 'cluster_id',
                            'segment_sequence_nogaps', 'segment_sequence',
-                           'start', 'stop', 'segment_length', 'aa_count']
-            sort_cols = ['Feature', 'protein_ID', 'start']
+                           'start_ungapped', 'stop_ungapped', 'aa_count',
+                           'full_sequence',
+                           'start', 'stop', 'segment_length']
+            sort_cols = ['Feature', 'protein_ID', 'start_ungapped']
 
         output_cols = [col for col in output_cols if col in covered_segments.columns]
         covered_segments_output = covered_segments[output_cols].copy()
