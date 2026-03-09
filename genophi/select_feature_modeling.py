@@ -113,7 +113,7 @@ def model_testing_select_MCC(
     np.random.seed(random_state)
 
     # Load and prepare data
-    X, y, full_feature_table = load_and_prepare_data(input, sample_column, phenotype_column, filter_type=set_filter)
+    X, y, full_feature_table = load_and_prepare_data(input, sample_column, phenotype_column, filter_type=set_filter, task_type=task_type)
     X_train, X_test, y_train, y_test, X_test_sample_ids, X_train_sample_ids = filter_data(
         X, y, 
         full_feature_table, 

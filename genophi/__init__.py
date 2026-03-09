@@ -48,6 +48,13 @@ from .feature_annotations import (
     parse_and_filter_aa_sequences
 )
 
+# Utility and validation functions
+from .utils import (
+    validate_phenotype_task_type,
+    validate_file,
+    validate_directory
+)
+
 __all__ = [
     # Metadata
     '__version__',
@@ -80,5 +87,9 @@ __all__ = [
     # Annotations
     'get_predictive_proteins',
     'merge_annotation_table',
-    'parse_and_filter_aa_sequences'
+    'parse_and_filter_aa_sequences',
+    # Utilities and validation
+    'validate_phenotype_task_type',
+    'validate_file',
+    'validate_directory'
 ]

@@ -17,7 +17,7 @@ from hdbscan import HDBSCAN
 import time
 
 # Function to load and prepare data
-def load_and_prepare_data(input_path, sample_column=None, phenotype_column=None, filter_type='none'):
+def load_and_prepare_data(input_path, sample_column=None, phenotype_column=None, filter_type='none', task_type='classification'):
     """
     Loads the input feature table, drops unnecessary columns, and splits into features and target.
 
@@ -25,19 +25,23 @@ def load_and_prepare_data(input_path, sample_column=None, phenotype_column=None,
         input_path (str): Path to the input CSV file containing the full feature table.
         sample_column (str): Optional name of the column to retain for sample identifiers.
         phenotype_column (str): Optional name of the column to retain for phenotype information.
+        filter_type (str): Filter type for the dataset ('none', 'strain', 'phage', 'dataset').
+        task_type (str): Task type ('classification' or 'regression') for validation. Default is 'classification'.
 
     Returns:
         X (DataFrame): Features for modeling.
         y (Series): Target variable (interaction).
         full_feature_table (DataFrame): The complete feature table after cleaning.
     """
+    from genophi.utils import validate_phenotype_task_type
+
     if not os.path.exists(input_path):
         raise FileNotFoundError(f"The input file {input_path} does not exist.")
-    
+
     full_feature_table = pd.read_csv(input_path)
     if full_feature_table.empty:
         raise ValueError("Input data is empty.")
-    
+
     if full_feature_table.isnull().any().any():
         print("Removing rows with missing values...")
         full_feature_table.dropna(inplace=True)
@@ -51,7 +55,10 @@ def load_and_prepare_data(input_path, sample_column=None, phenotype_column=None,
          raise ValueError(f"Target column '{target_column}' not found in input data.")
     y = full_feature_table[target_column]
 
-    # 2. Define Columns to Drop (Metadata + Target)
+    # 2. Validate that phenotype data type matches task type
+    validate_phenotype_task_type(y, task_type, target_column)
+
+    # 3. Define Columns to Drop (Metadata + Target)
     drop_columns = ['strain', 'phage', 'header', 'contig_id', 'orf_ko', filter_type, target_column]
     
     # Handle sample column logic
@@ -1449,7 +1456,7 @@ def run_feature_selection_iterations(
             # Set global random seeds for full reproducibility
             np.random.seed(random_state)
 
-            X, y, full_feature_table = load_and_prepare_data(input_path, sample_column=sample_column, phenotype_column=phenotype_column, filter_type=filter_type)
+            X, y, full_feature_table = load_and_prepare_data(input_path, sample_column=sample_column, phenotype_column=phenotype_column, filter_type=filter_type, task_type=task_type)
             X_train, X_test, y_train, y_test, X_test_sample_ids, X_train_sample_ids = filter_data(
                 X, y, 
                 full_feature_table, 
