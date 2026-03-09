@@ -68,3 +68,24 @@ packages = ["genophi", "genophi.workflows"]
 
 [tool.setuptools.package-data]
 genophi = ["py.typed"]
+
+[tool.pytest.ini_options]
+# Test markers for organizing test runs
+markers = [
+    "smoke: Quick smoke tests for package installation verification (<5 seconds)",
+    "unit: Unit tests for individual functions (seconds)",
+    "integration: Integration tests for module-to-module interactions (~30-45 min)",
+    "e2e: End-to-end tests for complete workflows (~60-90 min)",
+    "slow: Slow-running tests (may take >30 minutes)",
+    "full: Full regression tests with production parameters (~2-3 hours)",
+    "requires_mmseqs2: Tests that require MMSeqs2 to be installed",
+]
+
+# Test paths
+testpaths = ["tests"]
+
+# Warnings to ignore
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
