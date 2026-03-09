@@ -51,14 +51,45 @@ def get_predictive_features(feature_file_path, sample_column='strain', phenotype
     feature_df = pd.read_csv(feature_file_path)
 
     # Identify predictive feature groups
-    predictive_features = [x for x in feature_df.columns if x not in {sample_column, phenotype_column, 'phage', 'strain'}]
-    predictive_feature_groups = list(set(x.split('c_')[0] for x in predictive_features))
-    predictive_feature_groups = [x + 'c' for x in predictive_feature_groups]
+    # Only consider columns that match cluster naming pattern: <single_char>c_<number>
+    # Pattern examples: 'sc_0', 'pc_1', 'bc_2' (source[0] + 'c_' + cluster_index)
+    # This filters out metadata columns that don't follow the cluster naming convention
+    all_columns = [x for x in feature_df.columns if x not in {sample_column, phenotype_column, 'phage', 'strain'}]
+
+    # Filter to only valid cluster feature columns
+    # Must match pattern: single lowercase letter + 'c_' (e.g., 'sc_', 'pc_', 'bc_')
+    import re
+    cluster_pattern = re.compile(r'^[a-z]c_')
+    predictive_features = [x for x in all_columns if cluster_pattern.match(x)]
+
+    if not predictive_features:
+        logging.error(f"No cluster feature columns found (expected format: 'sc_*' or 'pc_*').")
+        logging.info(f"Available columns after excluding metadata: {all_columns}")
+        logging.info(f"Note: Cluster features should contain 'c_' (e.g., 'sc_cluster1', 'pc_cluster2')")
+        return []
+
+    # Extract feature group prefixes (e.g., 'sc', 'pc')
+    predictive_feature_groups = list(set(x.split('c_')[0] + 'c' for x in predictive_features))
     logging.info(f"Predictive feature groups detected: {predictive_feature_groups}")
+
+    # Log any columns that were filtered out as non-cluster columns
+    non_cluster_columns = [x for x in all_columns if x not in predictive_features]
+    if non_cluster_columns:
+        logging.info(f"Non-cluster columns (excluded from feature analysis): {non_cluster_columns}")
 
     # Check the number of detected groups and classify features
     if len(predictive_feature_groups) > 2:
-        logging.warning("More than two feature groups detected. Please ensure the correct feature groups are selected.")
+        logging.warning(f"More than two feature groups detected: {predictive_feature_groups}. Filtering to standard 'sc' and 'pc' groups only.")
+        # When >2 groups detected, fall back to standard sc/pc patterns
+        strain_features = [x for x in predictive_features if x.startswith('sc_')]
+        phage_features = [x for x in predictive_features if x.startswith('pc_')]
+
+        if not strain_features and not phage_features:
+            logging.error("No standard 'sc_' or 'pc_' prefixed features found among detected groups.")
+            logging.info(f"Detected feature groups: {predictive_feature_groups}")
+            logging.info(f"Sample features: {predictive_features[:10]}")
+            strain_features = []
+            phage_features = []
     elif len(predictive_feature_groups) == 2:
         if 'sc' in predictive_feature_groups and 'pc' in predictive_feature_groups:
             logging.info("Strain features with 'sc' ID detected.")
