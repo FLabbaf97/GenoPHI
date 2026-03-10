@@ -27,6 +27,7 @@ GenoPHI is a Python package for machine learning-based prediction of genotype-ph
 - [Python API](#python-api)
 - [Advanced Usage](#advanced-usage)
 - [Troubleshooting](#troubleshooting)
+- [Testing](#testing)
 - [Best Practices](#best-practices)
 - [Citation](#citation)
 - [Contributing](#contributing)
@@ -905,6 +906,39 @@ Solution:
 - Use faster feature selection methods (select_k_best, chi_squared)
 ```
 
+## Testing
+
+GenoPHI includes a comprehensive test suite organized into multiple tiers for different testing scenarios.
+
+### Quick Validation
+```bash
+# Verify installation
+pytest -m smoke -v
+
+# Run all tests (requires MMSeqs2)
+pytest -v
+```
+
+### Test Organization
+
+- **Smoke tests** (<5 seconds): Package installation verification
+- **Integration tests** (~30-45 min): Module-to-module interactions
+- **End-to-end tests** (~60-90 min): Complete workflow validation
+
+See [tests/README.md](tests/README.md) for detailed testing documentation, including:
+- How to run specific test tiers
+- Test data organization
+- Baseline metrics for regression testing
+- CI/CD recommendations
+
+### Running Specific Test Tiers
+```bash
+pytest -m smoke              # Quick installation check
+pytest -m integration        # Module integration tests
+pytest -m e2e                # End-to-end workflows
+pytest -m "not requires_mmseqs2"  # Skip MMSeqs2-dependent tests
+```
+
 ## Frequently Asked Questions (FAQ)
 
 ### General Questions
@@ -960,8 +994,8 @@ A: Minimum 8 GB. Recommend 16+ GB for 50+ genomes, 32+ GB for 100+ genomes. Use 
 
 ## Version History
 
-### v0.1.0 (Current)
-- Initial release
+### v1.0.0 (Current)
+- First stable release
 - Protein family-based workflow with MMseqs2 clustering
 - _K_-mer-based workflow with flexible _k_-mer lengths
 - Multiple feature selection methods (RFE, SHAP, SelectKBest, Chi-squared, Lasso)
@@ -985,14 +1019,19 @@ data/
 ├── experimental_validation/
 │   ├── BASEL_ECOR_interaction_matrix.csv    # BASEL collection against ECOR strains for model validation
 │   └── ECOR27_TnSeq_high_fitness_genes.csv  # Filtered RB-TnSeq results
-└── interaction_matrices/
-    ├── ecoli_interaction_matrix.csv          # E. coli phage-host interactions
-    ├── ecoli_interaction_matrix_subset.csv   # Smaller E. coli subset for testing
-    ├── klebsiella1_interaction_matrix.csv    # Klebsiella dataset 1
-    ├── klebsiella2_interaction_matrix.csv    # Klebsiella dataset 2
-    ├── pseudomonas_interaction_matrix.csv    # Pseudomonas interactions
-    └── vibrio_interaction_matrix.csv         # Vibrionaceae interactions
+├── interaction_matrices/
+│   ├── ecoli_interaction_matrix.csv          # E. coli phage-host interactions
+│   ├── ecoli_interaction_matrix_subset.csv   # Smaller E. coli subset for testing
+│   ├── klebsiella1_interaction_matrix.csv    # Klebsiella dataset 1
+│   ├── klebsiella2_interaction_matrix.csv    # Klebsiella dataset 2
+│   ├── pseudomonas_interaction_matrix.csv    # Pseudomonas interactions
+│   └── vibrio_interaction_matrix.csv         # Vibrionaceae interactions
+└── test_data/                                # Test datasets for test suite
 ```
+
+## Manuscript Scripts
+
+Analysis scripts used to generate figures and results for the GenoPHI publication are available in the `manuscript_scripts/` directory. These scripts demonstrate advanced usage patterns and reproduce the analyses presented in the paper.
 
 ## Citation
 

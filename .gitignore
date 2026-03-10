@@ -104,3 +104,6 @@ tests/test_outputs/
 # *.pkl
 # *.joblib
 # *.h5
+
+# Planning documents
+PLAN_*.md
