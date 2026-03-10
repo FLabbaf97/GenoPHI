@@ -944,7 +944,7 @@ pytest -m "not requires_mmseqs2"  # Skip MMSeqs2-dependent tests
 ### General Questions
 
 **Q: Can GenoPHI be used for organisms other than phages and bacteria?**  
-A: Yes! While designed for phage-host interactions, GenoPHI works with any protein sequences and phenotypes. It's been applied to bacteria, archaea, and eukaryotic microbes.
+A: Yes! While designed for phage-host interactions, GenoPHI works with any protein sequences and phenotypes.
 
 **Q: How many genomes do I need for reliable predictions?**  
 A: Minimum: ~20 strains and 20 phages with ~400 interactions. Recommended: 50+ strains, 50+ phages, 5000+ interactions for robust models.
@@ -962,7 +962,7 @@ A: Protein families group similar full-length proteins (interpretable, captures 
 A: Use phage-host mode for interaction prediction. Use single-strain mode for strain-level phenotypes (resistance, growth rate, etc.) where phage data isn't relevant.
 
 **Q: Which feature selection method should I use?**  
-A: Start with RFE (balanced performance). Try SHAP for interpretability or SelectKBest for speed. Compare multiple methods for best results.
+A: Start with RFE (balanced performance).
 
 **Q: How do I interpret SHAP plots?**  
 A: SHAP beeswarm plots show feature importance. Features at the top are most important. Red dots = high feature values, blue = low. Position right of center = positive impact on prediction.
