@@ -7,6 +7,7 @@ include LICENSE
 
 # Exclude development and build files
 exclude .gitignore
+exclude manuscript_scripts/results_analysis/public_data_modeling_analysis.ipynb
 recursive-exclude * __pycache__
 recursive-exclude * *.py[cod]
 recursive-exclude * *.so

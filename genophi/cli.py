@@ -56,7 +56,7 @@ def create_parser():
         epilog='Use genophi <command> --help for detailed information on each command.'
     )
     
-    parser.add_argument('--version', action='version', version='genophi 0.1.0')
+    parser.add_argument('--version', action='version', version='genophi 1.0.0')
     subparsers = parser.add_subparsers(dest='command', required=True,
                                        help='Available commands')
     
