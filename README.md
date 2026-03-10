@@ -989,8 +989,6 @@ A: Minimum 8 GB. Recommend 16+ GB for 50+ genomes, 32+ GB for 100+ genomes. Use 
 4. **Enable clustering** (`--use_clustering`) for correlated features
 5. **Check data quality** before modeling - ensure phenotype matrix matches genome filenames
 6. **Use SHAP plots** to understand which features drive predictions
-7. **Compare multiple feature selection methods** to find optimal features
-8. **For large datasets**, start with a subset to optimize parameters
 
 ## Version History
 
