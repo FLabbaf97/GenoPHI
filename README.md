@@ -174,8 +174,10 @@ genophi protein-family-workflow \
 - `--num_runs_modeling 50`: 50 modeling runs for reliable performance estimates
 - `--method rfe`: Recursive Feature Elimination (balanced performance)
 - `--use_clustering`: Enable sample clustering-aware filtering
-- `--filter_type strain`: Split data by strain to test generalization
-- `--use_shap`: Generate SHAP plots and SHAP importance outputs
+- `--filter_type strain`: **Critical for phage-host prediction** - Ensures train/test splits separate by strain so the model learns to predict on new strains it hasn't seen before
+- `--use_shap`: Generate SHAP plots and feature importance analysis for model interpretability
+
+**Note:** For phage-host interaction prediction, `--filter_type strain` is strongly recommended. This controls how train/test splits are made during feature selection and modeling, ensuring the model never sees the same strain in both training and testing. This forces the model to learn generalizable patterns rather than memorizing specific strain characteristics.
 
 For single-strain phenotypes (no phage data):
 ```bash
@@ -240,8 +242,11 @@ genophi protein-family-workflow \
 results/
 ├── strain/                  # Strain MMseqs2 outputs
 ├── phage/                   # Phage MMseqs2 outputs (if provided)
-├── merged/                  # Merged strain+phage feature table (if phage input)
+├── merged/                  # Merged strain+phage feature table directory (if phage input)
+│   └── full_feature_table.csv
 ├── feature_selection/       # Selected features and occurrence counts
+│   ├── filtered_feature_tables/
+│   └── features_occurrence.csv
 ├── modeling_results/        # Models and performance metrics
 │   ├── cutoff_3/, cutoff_4/, cutoff_5/, ...
 │   ├── model_performance/   # Summary plots, metrics, predictive_proteins/
@@ -660,21 +665,22 @@ output_dir/
 │       ├── feature_table.csv
 │       ├── selected_features.csv
 │       └── feature_assignments.csv
-├── phage/                       # Optional if --input_path_phage is provided
+├── phage/                       # Created when --input_path_phage is provided
 │   ├── clusters.tsv
 │   ├── presence_absence_matrix.csv
 │   └── features/
 │       ├── feature_table.csv
 │       ├── selected_features.csv
 │       └── feature_assignments.csv
-├── merged/
-│   └── full_feature_table.csv   # Created when phage input is provided
+├── merged/                      # Created when phage input is provided
+│   └── full_feature_table.csv
 ├── full_feature_table.csv       # Created for single-strain mode (no phage input)
 ├── feature_selection/
-│   └── filtered_feature_tables/
-│       ├── select_feature_table_cutoff_3.csv
-│       ├── select_feature_table_cutoff_10.csv
-│       └── ...
+│   ├── filtered_feature_tables/
+│   │   ├── select_feature_table_cutoff_3.csv
+│   │   ├── select_feature_table_cutoff_10.csv
+│   │   └── ...
+│   └── features_occurrence.csv
 ├── modeling_results/
 │   ├── cutoff_3/, cutoff_4/, cutoff_5/, ...
 │   ├── model_performance/
@@ -684,7 +690,7 @@ output_dir/
 │   └── select_features_model_predictions.csv
 ├── tmp/
 │   ├── strain/
-│   └── phage/                   # Optional
+│   └── phage/                   # Created when phage input provided
 ├── workflow_report.txt
 └── workflow_report.csv
 ```
@@ -782,15 +788,20 @@ assign_predict_workflow(
 
 ### Custom Train-Test Splits
 
-Control how data is split for model evaluation:
+Control how data is split during training and testing:
 
 ```bash
---filter_type none      # Random split
---filter_type strain    # Leave-strain-out (test on new strains)
---filter_type phage     # Leave-phage-out (test on new phages)
+--filter_type none      # Random split (default, but not recommended for phage-host)
+--filter_type strain    # Leave-strain-out CV splits - RECOMMENDED for phage-host
+--filter_type phage     # Leave-phage-out CV splits
 ```
 
-**Recommendation**: Use `--filter_type strain` for phage-host predictions to evaluate generalization to new strains.
+**Important Recommendation**: For phage-host interaction prediction, **always use `--filter_type strain`**. This controls how train/test splits are made during each iteration:
+- `strain`: Ensures the same strain never appears in both training and testing sets within an iteration. Forces the model to learn features that generalize to completely new bacterial strains.
+- `none`: Random splits allow the same strains in both sets, leading to overly optimistic performance because the model can memorize strain-specific patterns.
+- `phage`: Leave-phage-out splits, useful for testing generalization to new phages.
+
+The split type fundamentally changes what the model learns, not just how it's evaluated.
 
 ### Hyperparameter Tuning
 
@@ -964,8 +975,8 @@ A: Use phage-host mode for interaction prediction. Use single-strain mode for st
 **Q: Which feature selection method should I use?**  
 A: Start with RFE (balanced performance).
 
-**Q: How do I interpret SHAP plots?**  
-A: SHAP beeswarm plots show feature importance. Features at the top are most important. Red dots = high feature values, blue = low. Position right of center = positive impact on prediction.
+**Q: How do I interpret SHAP plots?**
+A: SHAP beeswarm plots show feature importance. Features at the top are most important. Red dots = high feature values, blue = low. Position right of center = positive impact on prediction. Enable with `--use_shap` flag during model training.
 
 **Q: Can I use custom features instead of protein families?**  
 A: Yes! Use `select-and-train` with any feature table containing a phenotype column (metabolic pathways, gene presence/absence, etc.).
@@ -984,11 +995,12 @@ A: Minimum 8 GB. Recommend 16+ GB for 50+ genomes, 32+ GB for 100+ genomes. Use 
 ## Best Practices
 
 1. **Start with recommended defaults** for initial analysis
-2. **Use `--filter_type strain`** for phage-host predictions to evaluate generalization
+2. **For phage-host predictions: Always use `--filter_type strain`** - This forces the model to learn generalizable patterns by ensuring strains in the test set are never seen during training (critical!)
 3. **Run multiple iterations** (`num_runs_fs = 25`, `num_runs_modeling = 50`) for robust results
 4. **Enable clustering** (`--use_clustering`) for correlated features
-5. **Check data quality** before modeling - ensure phenotype matrix matches genome filenames
-6. **Use SHAP plots** to understand which features drive predictions
+5. **Check data quality** before modeling - ensure phenotype matrix matches genome filenames exactly
+6. **Use SHAP plots** (`--use_shap`) to understand which features drive predictions and for model interpretability
+7. **For single-strain phenotypes**: Use `--filter_type none` or omit (random splits are appropriate when no phage data)
 
 ## Version History
 
