@@ -151,10 +151,10 @@ For most phage-host interaction prediction tasks, use these recommended settings
 
 ```bash
 genophi protein-family-workflow \
-    --input_strain strain_fastas/ \
-    --input_phage phage_fastas/ \
+    --input_path_strain strain_fastas/ \
+    --input_path_phage phage_fastas/ \
     --phenotype_matrix interactions.csv \
-    --output results/ \
+    --output_dir results/ \
     --threads 8 \
     --num_features 100 \
     --num_runs_fs 25 \
@@ -163,7 +163,8 @@ genophi protein-family-workflow \
     --use_clustering \
     --cluster_method hierarchical \
     --n_clusters 20 \
-    --filter_type strain
+    --filter_type strain \
+    --use_shap
 ```
 
 **Key Parameters Explained:**
@@ -171,15 +172,16 @@ genophi protein-family-workflow \
 - `--num_runs_fs 25`: 25 iterations for robust feature selection
 - `--num_runs_modeling 50`: 50 modeling runs for reliable performance estimates
 - `--method rfe`: Recursive Feature Elimination (balanced performance)
-- `--use_clustering`: Enable hierarchical clustering of features
+- `--use_clustering`: Enable sample clustering-aware filtering
 - `--filter_type strain`: Split data by strain to test generalization
+- `--use_shap`: Generate SHAP plots and SHAP importance outputs
 
 For single-strain phenotypes (no phage data):
 ```bash
 genophi protein-family-workflow \
-    --input_strain strain_fastas/ \
+    --input_path_strain strain_fastas/ \
     --phenotype_matrix phenotypes.csv \
-    --output results/ \
+    --output_dir results/ \
     --threads 8 \
     --sample_column strain \
     --phenotype_column resistance \
@@ -219,29 +221,33 @@ The primary workflow for most applications. Performs complete protein family clu
 
 ```bash
 genophi protein-family-workflow \
-    --input_strain strain_fastas/ \
-    --input_phage phage_fastas/ \
+    --input_path_strain strain_fastas/ \
+    --input_path_phage phage_fastas/ \
     --phenotype_matrix interactions.csv \
-    --output results/ \
+    --output_dir results/ \
     --threads 8 \
     --num_features 100 \
     --num_runs_fs 25 \
     --num_runs_modeling 50 \
     --method rfe \
-    --filter_type strain
+    --filter_type strain \
+    --use_shap
 ```
 
 **Output Structure:**
 ```
 results/
-├── clustering/              # MMseqs2 databases and clusters
-├── feature_tables/          # Generated feature tables
+├── strain/                  # Strain MMseqs2 outputs
+├── phage/                   # Phage MMseqs2 outputs (if provided)
+├── merged/                  # Merged strain+phage feature table (if phage input)
 ├── feature_selection/       # Selected features and occurrence counts
 ├── modeling_results/        # Models and performance metrics
-│   ├── cutoff_5/, cutoff_10/, ...
-│   ├── model_performance/   # Summary plots
-│   └── models/             # Trained models for prediction
-└── workflow_report.txt     # Performance and timing summary
+│   ├── cutoff_3/, cutoff_4/, cutoff_5/, ...
+│   ├── model_performance/   # Summary plots, metrics, predictive_proteins/
+│   ├── select_features_model_performance.csv
+│   └── select_features_model_predictions.csv
+├── workflow_report.txt      # Runtime/performance summary
+└── workflow_report.csv      # Parameters and runtime metrics
 ```
 
 #### Single-Strain Phenotype Prediction
@@ -250,9 +256,9 @@ For strain-level phenotypes (no phage data required):
 
 ```bash
 genophi protein-family-workflow \
-    --input_strain strain_fastas/ \
+    --input_path_strain strain_fastas/ \
     --phenotype_matrix strain_phenotypes.csv \
-    --output results/ \
+    --output_dir results/ \
     --threads 8 \
     --sample_column strain \
     --phenotype_column antibiotic_resistance \
@@ -301,8 +307,8 @@ Generate _k_-mer features from all proteins without prior protein family analysi
 
 ```bash
 genophi kmer-workflow \
-    --input_strain strain_fastas/ \
-    --input_phage phage_fastas/ \
+    --input_strain_dir strain_fastas/ \
+    --input_phage_dir phage_fastas/ \
     --phenotype_matrix interactions.csv \
     --output kmer_results/ \
     --k 4 \
@@ -321,8 +327,8 @@ genophi kmer-workflow \
 ```bash
 --use_dynamic_weights \        # Apply dynamic weighting
 --weights_method inverse_frequency \       # Weighting method
---use_feature_clustering \     # Pre-filter by cluster presence
---feature_n_clusters 20        # Number of feature clusters
+--no-clustering \              # Disable clustering-aware train/test splitting
+--use_shap                     # Save SHAP-based interpretation outputs
 ```
 
 ### 4. Modular Step-by-Step Workflows
@@ -374,18 +380,18 @@ genophi select-features \
 ```bash
 --use_dynamic_weights \               # Handle imbalanced features
 --weights_method inverse_frequency \  # Weighting strategy
---use_clustering \                    # Group correlated features
+--no-clustering \                     # Disable clustering (enabled by default)
 --cluster_method hierarchical \       # Clustering algorithm
 --n_clusters 20                       # Number of clusters
 ```
 
 #### Step 3: Model Training
 
-Train models from selected features or any feature table:
+Train models from selected features (directory input):
 
 ```bash
 genophi train \
-    --input_dir feature_selection/filtered_feature_tables \
+    --input feature_selection/filtered_feature_tables \
     --output models/ \
     --num_runs 50 \
     --phenotype_column interaction \
@@ -404,7 +410,7 @@ Run feature selection and modeling together from **any feature table**:
 
 ```bash
 genophi select-and-train \
-    --input custom_feature_table.csv \
+    --full_feature_table custom_feature_table.csv \
     --output results/ \
     --method rfe \
     --num_features 100 \
@@ -431,9 +437,10 @@ genophi assign-predict \
     --mmseqs_db results/tmp/strain/mmseqs_db \
     --clusters_tsv results/strain/clusters.tsv \
     --feature_map results/strain/features/selected_features.csv \
-    --model_dir results/modeling_results/cutoff_* \
+    --tmp_dir tmp_assign/ \
+    --model_dir results/modeling_results/cutoff_10 \
     --phage_feature_table results/phage/features/feature_table.csv \
-    --output predictions/ \
+    --output_dir predictions/ \
     --genome_type strain
 ```
 
@@ -441,8 +448,10 @@ For new phages:
 ```bash
 --input_dir new_phages/ \
 --mmseqs_db results/tmp/phage/mmseqs_db \
---clusters_tsv results/phage/features/selected_features.csv \
+--clusters_tsv results/phage/clusters.tsv \
+--tmp_dir tmp_assign_phage/ \
 --strain_feature_table results/strain/features/feature_table.csv \
+--output_dir predictions/ \
 --genome_type phage
 ```
 
@@ -454,10 +463,11 @@ genophi kmer-assign-predict \
     --mmseqs_db results/tmp/strain/mmseqs_db \
     --clusters_tsv results/strain/clusters.tsv \
     --feature_map results/strain/features/selected_features.csv \
-    --filtered_kmers kmer_results/kmer_tables/filtered_kmers.csv \
-    --aa_sequence_file kmer_results/kmer_tables/aa_sequences.faa \
-    --model_dir kmer_results/modeling/modeling_results/cutoff_* \
-    --output predictions/ \
+    --filtered_kmers kmer_analysis/strain/filtered_kmers.csv \
+    --aa_sequence_file kmer_results/strain_combined.faa \
+    --tmp_dir tmp_kmer_assign/ \
+    --model_dir kmer_results/modeling/modeling_results/cutoff_10 \
+    --output_dir predictions/ \
     --genome_type strain
 ```
 
@@ -467,12 +477,13 @@ Identifies proteins associated predictive protein families or _k_-mers and merge
 
 ```bash
 genophi annotate \
-    --selected_features feature_selection/filtered_feature_tables/select_feature_table_cutoff_3.csv \
-    --feature_map strain/features/feature_map.csv \
-    --clusters_tsv clustering_results/clustering/selected_features.csv \
-    --annotation_table annotations.csv \
-    --aa_sequence_file all_sequences.faa \
-    --output annotations/ \
+    --feature_file_path results/feature_selection/filtered_feature_tables/select_feature_table_cutoff_10.csv \
+    --feature2cluster_path results/strain/features/selected_features.csv \
+    --cluster2protein_path results/strain/clusters.tsv \
+    --fasta_dir_or_file strain_fastas/ \
+    --modeling_dir results/modeling_results/cutoff_10 \
+    --annotation_table_path annotations.csv \
+    --output_dir annotations/ \
     --feature_type strain
 ```
 
@@ -641,58 +652,66 @@ Example visualizations from the original README:
 
 ```
 output_dir/
-├── clustering/
-│   ├── strain_db/              # MMseqs2 database
-│   ├── strain_clusters.tsv     # Cluster assignments
-│   ├── phage_db/               # Phage database (optional)
-│   └── phage_clusters.tsv
-├── feature_tables/
-│   ├── strain_feature_table.csv
-│   ├── phage_feature_table.csv  # If phages provided
-│   ├── merged_feature_table.csv
-│   └── feature_map.csv
+├── strain/
+│   ├── clusters.tsv
+│   ├── presence_absence_matrix.csv
+│   └── features/
+│       ├── feature_table.csv
+│       ├── selected_features.csv
+│       └── feature_assignments.csv
+├── phage/                       # Optional if --input_path_phage is provided
+│   ├── clusters.tsv
+│   ├── presence_absence_matrix.csv
+│   └── features/
+│       ├── feature_table.csv
+│       ├── selected_features.csv
+│       └── feature_assignments.csv
+├── merged/
+│   └── full_feature_table.csv   # Created when phage input is provided
+├── full_feature_table.csv       # Created for single-strain mode (no phage input)
 ├── feature_selection/
-│   ├── selected_features/
-│   │   ├── run_1_selected_features.csv
-│   │   └── ...
-│   ├── feature_occurrence_counts.csv
 │   └── filtered_feature_tables/
-│       ├── cutoff_5_feature_table.csv
-│       ├── cutoff_10_feature_table.csv
+│       ├── select_feature_table_cutoff_3.csv
+│       ├── select_feature_table_cutoff_10.csv
 │       └── ...
 ├── modeling_results/
-│   ├── cutoff_5/
-│   │   ├── run_1/, run_2/, ...
-│   │   └── cutoff_5_combined_performance.csv
-│   ├── cutoff_10/
+│   ├── cutoff_3/, cutoff_4/, cutoff_5/, ...
 │   ├── model_performance/
-│   │   ├── shap_summary_plots/
-│   │   ├── roc_curve.png
-│   │   ├── pr_curve.png
-│   │   └── performance_comparison.csv
-│   └── models/
-│       ├── run_1/best_model.pkl
-│       └── ...
-├── predictions/
-│   ├── predicted_interactions.csv
-│   └── prediction_confidence.csv
-└── workflow_report.txt
+│   │   ├── model_performance_metrics.csv
+│   │   └── predictive_proteins/
+│   ├── select_features_model_performance.csv
+│   └── select_features_model_predictions.csv
+├── tmp/
+│   ├── strain/
+│   └── phage/                   # Optional
+├── workflow_report.txt
+└── workflow_report.csv
 ```
 
 ### _K_-mer Workflow
 
 ```
 output_dir/
-├── clustering/                  # Protein family clustering
-├── kmer_tables/
-│   ├── kmer_feature_table.csv
-│   ├── feature_map.csv
-│   ├── filtered_kmers.csv
-│   ├── feature2cluster.csv
-│   └── aa_sequences.faa
-├── feature_selection/
-├── modeling_results/
-└── kmer_workflow_report.txt
+├── strain_combined.faa
+├── strain_proteins.csv
+├── phage_combined.faa           # Optional
+├── phage_proteins.csv           # Optional
+├── feature_tables/
+│   ├── strain_feature_table.csv
+│   ├── final_feature_table.csv
+│   ├── phage_feature_table.csv  # Optional
+│   ├── phage_final_feature_table.csv  # Optional
+│   └── selected_features.csv
+├── full_feature_table.csv
+├── modeling/
+│   ├── feature_selection/
+│   └── modeling_results/
+│       ├── cutoff_*/
+│       ├── model_performance/model_performance_metrics.csv
+│       ├── select_features_model_performance.csv
+│       └── select_features_model_predictions.csv
+├── workflow_report.txt
+└── kmer_workflow_report.csv
 ```
 
 ## Python API
@@ -701,11 +720,11 @@ GenoPHI can also be used programmatically:
 
 ```python
 from genophi.workflows import (
-    run_protein_family_workflow,
     run_kmer_workflow,
     run_modeling_workflow_from_feature_table,
     assign_predict_workflow
 )
+from genophi.workflows.protein_family_workflow import run_protein_family_workflow
 
 # Recommended: Protein family workflow
 run_protein_family_workflow(
@@ -750,7 +769,8 @@ assign_predict_workflow(
     mmseqs_db="results/tmp/strain/mmseqs_db",
     clusters_tsv="results/strain/clusters.tsv",
     feature_map="results/strain/features/selected_features.csv",
-    model_dir="results/modeling_results/cutoff_*",
+    tmp_dir="tmp_assign/",
+    model_dir="results/modeling_results/cutoff_10",
     output_dir="predictions/",
     genome_type='strain',
     phage_feature_table_path="results/phage/features/feature_table.csv"
@@ -808,6 +828,7 @@ Filter features by cluster presence before modeling:
 ```
 
 This removes features that appear in fewer than `feature_min_cluster_presence` genome clusters.
+This option set is available in protein-family and full workflows (`protein-family-workflow`, `cluster`, and `full-workflow`).
 
 ## Example Datasets
 
