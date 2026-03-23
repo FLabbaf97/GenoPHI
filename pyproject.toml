@@ -44,10 +44,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/Noonanav/genophi"
-Documentation = "https://github.com/Noonanav/genophi#readme"
-Repository = "https://github.com/Noonanav/genophi"
-Issues = "https://github.com/Noonanav/genophi/issues"
+Homepage = "https://github.com/Noonanav/GenoPHI"
+Documentation = "https://github.com/Noonanav/GenoPHI#readme"
+Repository = "https://github.com/Noonanav/GenoPHI"
+Issues = "https://github.com/Noonanav/GenoPHI/issues"
 
 [project.scripts]
 # Main unified CLI entry point

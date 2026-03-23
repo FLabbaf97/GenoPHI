@@ -4,6 +4,7 @@
 
 GenoPHI is a Python package for machine learning-based prediction of genotype-phenotype relationships using whole-genome sequence data. Originally designed for phage-host interaction prediction, GenoPHI supports both binary interaction prediction and regression tasks for any microbial phenotype. The package implements protein family-based and _k_-mer-based approaches to extract genomic features from amino acid sequences and predict phenotypes using CatBoost gradient boosting models.
 
+[![PyPI version](https://badge.fury.io/py/genophi.svg)](https://badge.fury.io/py/genophi)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 
@@ -67,19 +68,6 @@ GenoPHI is a Python package for machine learning-based prediction of genotype-ph
 
 ## Installation
 
-### Prerequisites
-
-**External Dependency**: GenoPHI requires MMseqs2 for protein sequence clustering and assignment.
-
-Install via conda/mamba:
-```bash
-conda install -c bioconda mmseqs2
-# or
-mamba install -c bioconda mmseqs2
-```
-
-For other installation methods, see the [MMSeqs2 Wiki](https://github.com/soedinglab/MMseqs2/wiki#installation).
-
 ### System Requirements
 
 **Minimum Requirements:**
@@ -107,7 +95,12 @@ conda activate genophi
 
 ### Install GenoPHI
 
-Clone and install from GitHub:
+**From PyPI (Recommended):**
+```bash
+pip install genophi
+```
+
+**From GitHub (Development):**
 ```bash
 git clone https://github.com/Noonanav/GenoPHI.git
 cd GenoPHI
@@ -118,6 +111,19 @@ For development with optional dependencies:
 ```bash
 pip install -e ".[dev]"
 ```
+
+### Install MMseqs2
+
+**External Dependency**: GenoPHI requires MMseqs2 for protein sequence clustering and assignment.
+
+Install via conda/mamba:
+```bash
+conda install -c bioconda mmseqs2
+# or
+mamba install -c bioconda mmseqs2
+```
+
+For other installation methods, see the [MMSeqs2 Wiki](https://github.com/soedinglab/MMseqs2/wiki#installation).
 
 ### Verify Installation
 
