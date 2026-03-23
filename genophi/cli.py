@@ -130,8 +130,8 @@ def create_parser():
                    help='Feature selection method (default: rfe)')
     p.add_argument('--num_features', default='none',
                    help='Number of features to select or "none" for automatic (default: none)')
-    p.add_argument('--num_runs', type=int, default=50,
-                   help='Number of feature selection iterations (default: 50)')
+    p.add_argument('--num_runs', type=int, default=25,
+                   help='Number of feature selection iterations (default: 25)')
     p.add_argument('--filter_type', default='none', choices=['none', 'strain', 'phage'],
                    help='Filter type for input data (default: none)')
     p.add_argument('--phenotype_column',

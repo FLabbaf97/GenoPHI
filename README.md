@@ -416,6 +416,16 @@ For regression tasks:
 --phenotype_column efficiency
 ```
 
+**Advanced Training Options:**
+```bash
+--set_filter strain \                    # Filter type: none, strain, phage (default: strain)
+--use_dynamic_weights \                  # Apply dynamic feature weighting
+--weights_method inverse_frequency \     # Weighting: log10, inverse_frequency, balanced
+--no-clustering \                        # Disable clustering-aware splits
+--cluster_method hierarchical \          # Clustering: hdbscan, hierarchical (default: hierarchical)
+--n_clusters 20                          # Number of clusters (default: 20)
+```
+
 #### Step 4: Select-and-Train (Combined)
 
 Run feature selection and modeling together from **any feature table**:
@@ -440,6 +450,26 @@ This command is flexible and works with:
 - Any feature table with any phenotype / output column
 
 ### 5. Prediction Workflows
+
+#### Predict from Assigned Features
+
+Generate predictions for new genome combinations using pre-assigned features:
+
+```bash
+genophi predict \
+    --input_dir strain_feature_tables/ \
+    --model_dir models/cutoff_10 \
+    --output_dir predictions/ \
+    --phage_feature_table phage_features.csv \
+    --threads 8
+```
+
+**Parameters:**
+- `--input_dir`: Directory with strain-specific feature tables
+- `--model_dir`: Directory containing trained models
+- `--phage_feature_table`: Path to phage feature table (optional for single-strain mode)
+- `--strain_source`: Prefix for strain features (default: strain)
+- `--phage_source`: Prefix for phage features (default: phage)
 
 #### Assign Features and Predict (Protein Families)
 
