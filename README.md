@@ -219,6 +219,7 @@ GenoPHI provides the following main commands:
 | `annotate` | Annotate predictive features with functional info |
 | `kmer-assign-features` | Assign _k_-mer features to new genomes |
 | `kmer-assign-predict` | Assign _k_-mer features and predict |
+| `kmer-analysis` | Analyze _k_-mer composition and diversity |
 
 ## Workflows
 
@@ -1049,7 +1050,7 @@ A: Minimum 8 GB. Recommend 16+ GB for 50+ genomes, 32+ GB for 100+ genomes. Use 
 - SHAP-based interpretability
 - Support for classification and regression tasks
 - Single-strain and phage-host prediction modes
-- Unified CLI with 12 commands
+- Unified CLI with 14 commands
 - Comprehensive visualization outputs
 
 ### Upcoming Features
