@@ -1569,13 +1569,13 @@ def run_feature_selection_iterations(
     print(f"Feature selection iterations completed in {end_total_time - start_total_time:.2f} seconds.")
 
 def generate_feature_tables(
-    model_testing_dir, full_feature_table_file, filter_table_dir, 
+    model_testing_dir, full_feature_table_file, filter_table_dir,
     phenotype_column=None, sample_column='strain', cut_offs=[3, 5, 7, 10, 15, 20, 25, 30, 35, 40, 45, 50],
-    binary_data=False, max_features=None, filter_type='strain'
+    binary_data=False, max_features=None, min_features=None, filter_type='strain'
 ):
     """
     Generate and save feature tables based on feature selection results from multiple runs in the main directory.
-    
+
     Args:
         model_testing_dir (str): Directory containing feature selection runs.
         full_feature_table_file (str): Path to the full feature table CSV.
@@ -1584,6 +1584,11 @@ def generate_feature_tables(
         sample_column (str): Column name for the sample or strain identifier.
         cut_offs (list): List of thresholds for feature occurrences to be used for filtering.
         binary_data (bool): If True, converts feature values to binary (1/0). Default is False for continuous values.
+        max_features (int, float, str, or None): Maximum number of features (exclusive upper bound).
+            If None, auto-calculated based on interaction count. Can be passed as string 'none'.
+        min_features (int, str, or None): Minimum number of features required (inclusive lower bound).
+            If None, auto-calculated based on interaction count. Can be passed as string 'none'.
+        filter_type (str): Type of filter to apply ('strain', 'phage', etc.).
     """
     if phenotype_column is None:
         phenotype_column = 'interaction'
@@ -1616,7 +1621,19 @@ def generate_feature_tables(
                 logging.warning(f"Invalid max_features value: {max_features}. Using default calculation.")
                 max_features = None
 
-    min_features = 5 if interaction_count < 500 else 20
+    # Validate and convert min_features if it is passed as a string (e.g., from CLI args)
+    if isinstance(min_features, str):
+        if min_features.lower() == 'none':
+            min_features = None
+        else:
+            try:
+                min_features = int(min_features)
+            except ValueError:
+                logging.warning(f"Invalid min_features value: {min_features}. Using default calculation.")
+                min_features = None
+
+    if min_features is None:
+        min_features = 5 if interaction_count < 500 else 20
     if max_features is None:
         max_features = interaction_count / 10 if interaction_count < 500 else interaction_count / 20
 
@@ -1625,7 +1642,7 @@ def generate_feature_tables(
         num_features = len(features_occurrence_filter)
         print(f'Cut-off: {cut_off} - Features: {num_features}')
 
-        if min_features < num_features < max_features:
+        if min_features <= num_features < max_features:
             select_features = features_occurrence_filter['Feature'].tolist()
             id_vars = [sample_column]
             if 'phage' in full_feature_table.columns:

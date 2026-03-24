@@ -114,7 +114,8 @@ def run_protein_family_workflow(
     annotation_table_path=None, 
     protein_id_col="protein_ID",
     task_type='classification', 
-    max_features='none', 
+    max_features='none',
+    min_features='none',
     max_ram=8, 
     use_dynamic_weights=False, 
     weights_method='log10',
@@ -378,6 +379,7 @@ def run_protein_family_workflow(
 
         logging.info("Generating feature tables from feature selection results...")
         max_features = num_features if max_features == 'none' else int(max_features)
+        min_features_val = None if min_features == 'none' else int(min_features)
         filter_table_dir = os.path.join(base_fs_output_dir, 'filtered_feature_tables')
         generate_feature_tables(
             model_testing_dir=base_fs_output_dir,
@@ -388,6 +390,7 @@ def run_protein_family_workflow(
             cut_offs=[3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 17, 20, 22, 25, 27, 30, 32, 35, 37, 40, 42, 45, 47, 50],
             binary_data=True,
             max_features=max_features,
+            min_features=min_features_val,
             filter_type=filter_type
         )
 
@@ -570,6 +573,7 @@ def main():
     fs_modeling_group.add_argument('--num_runs_modeling', type=int, default=10, help='Number of runs per feature table for modeling (default: 10).')
     fs_modeling_group.add_argument('--task_type', type=str, default='classification', choices=['classification', 'regression'], help="Task type for modeling ('classification' or 'regression').")
     fs_modeling_group.add_argument('--max_features', default='none', help='Maximum number of features to include in the feature tables.')
+    fs_modeling_group.add_argument('--min_features', default='none', help='Minimum number of features required for a cutoff threshold (default: auto-calculated based on dataset size).')
 
     # General parameters
     general_group = parser.add_argument_group('General')

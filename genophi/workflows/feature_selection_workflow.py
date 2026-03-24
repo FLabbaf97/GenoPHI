@@ -30,10 +30,11 @@ def run_feature_selection_workflow(
     num_runs=50, method='rfe', 
     task_type='classification', 
     phenotype_column=None,
-    sample_column='strain', 
+    sample_column='strain',
     phage_column='phage',
-    binary_data=False, 
-    max_features='none', 
+    binary_data=False,
+    max_features='none',
+    min_features='none',
     use_dynamic_weights=False,
     weights_method='log10',
     use_clustering=True,
@@ -112,6 +113,7 @@ def run_feature_selection_workflow(
     # Generate feature tables based on the results
     print("Generating feature tables...")
     max_features = None if max_features == 'none' else int(max_features)
+    min_features_val = None if min_features == 'none' else int(min_features)
     filter_table_dir = os.path.join(base_output_dir, 'filtered_feature_tables')
     generate_feature_tables(
         model_testing_dir=base_output_dir,
@@ -122,6 +124,7 @@ def run_feature_selection_workflow(
         cut_offs=[3, 4, 5, 6, 7, 8, 10, 15, 20, 25, 30, 35, 40, 45, 50],
         binary_data=binary_data,
         max_features=max_features,
+        min_features=min_features_val,
         filter_type=filter_type
     )
 
@@ -143,6 +146,7 @@ def main():
     parser.add_argument('--phage_column', type=str, default='phage', help='Optional column name for phage identifiers.')
     parser.add_argument('--binary_data', action='store_true', help='If set, converts feature values to binary (1/0); otherwise, continuous values are kept.')
     parser.add_argument('--max_features', default='none', help='Maximum number of features to include in the feature tables.')
+    parser.add_argument('--min_features', default='none', help='Minimum number of features required for a cutoff threshold (default: auto-calculated based on dataset size).')
     parser.add_argument('--use_dynamic_weights', action='store_true', help='If set, uses dynamic weights for feature selection.')
     parser.add_argument('--weights_method', type=str, default='log10', choices=['log10', 'inverse_frequency', 'balanced'], help='Method for calculating dynamic weights.')
     parser.add_argument('--use_clustering', action='store_true', help='If set, uses clustering for feature selection.')

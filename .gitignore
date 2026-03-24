@@ -99,6 +99,7 @@ tests/.pytest_cache/
 tests/*/output/
 tests/*/tmp/
 tests/test_outputs/
+data/test_data/test_shap_output/
 
 # Model files (large binaries - optionally uncomment if not tracking)
 # *.pkl

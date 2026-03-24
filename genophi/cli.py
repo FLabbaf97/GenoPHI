@@ -144,6 +144,8 @@ def create_parser():
                    help='Feature values are binary (0/1)')
     p.add_argument('--max_features', default='none',
                    help='Maximum number of features to include (default: none)')
+    p.add_argument('--min_features', default='none',
+                   help='Minimum number of features required for a cutoff threshold (default: auto)')
     p.add_argument('--use_dynamic_weights', action='store_true',
                    help='Use dynamic feature weights')
     p.add_argument('--weights_method', default='inverse_frequency',
@@ -339,6 +341,8 @@ def create_parser():
                    help='Modeling task type (default: classification)')
     p.add_argument('--max_features', default='none',
                    help='Maximum features to include (default: none)')
+    p.add_argument('--min_features', default='none',
+                   help='Minimum number of features required for a cutoff threshold (default: auto)')
     p.add_argument('--max_ram', type=float, default=16,
                    help='Maximum RAM in GB (default: 16)')
     p.add_argument('--binary_data', action='store_true',
@@ -461,6 +465,8 @@ def create_parser():
                 help='Type of prediction task (default: classification)')
     p.add_argument('--max_features', default='none',
                 help='Maximum number of features for modeling (default: none)')
+    p.add_argument('--min_features', default='none',
+                help='Minimum number of features required for a cutoff threshold (default: auto)')
 
     # Clustering-based filtering (for samples)
     p.add_argument('--use_clustering', action='store_true',
@@ -901,6 +907,7 @@ def run_select_features(args):
         phage_column=args.phage_column,
         binary_data=args.binary_data,
         max_features=args.max_features,
+        min_features=args.min_features,
         use_dynamic_weights=args.use_dynamic_weights,
         weights_method=args.weights_method,
         use_clustering=args.use_clustering,
@@ -1044,6 +1051,7 @@ def run_select_and_train(args):
         protein_id_col=args.protein_id_col,
         task_type=args.task_type,
         max_features=args.max_features,
+        min_features=args.min_features,
         max_ram=args.max_ram,
         binary_data=args.binary_data,
         use_dynamic_weights=args.use_dynamic_weights,
@@ -1324,6 +1332,7 @@ def protein_family_workflow_command(args):
         protein_id_col=args.protein_id_col,
         task_type=args.task_type,
         max_features=args.max_features,
+        min_features=args.min_features,
         max_ram=args.max_ram,
         use_dynamic_weights=args.use_dynamic_weights,
         weights_method=args.weights_method,
