@@ -106,7 +106,7 @@ def small_test_dataset(test_data_strains, test_data_phages, test_interaction_mat
     return {
         'strain_dir': small_strain_dir,
         'phage_dir': small_phage_dir,
-        'matrix': matrix_path,
+        'interaction_matrix': matrix_path,
         'output_dir': tmp_path / 'output',
         'strain_count': len(strain_files),
         'phage_count': len(phage_files),
@@ -155,7 +155,7 @@ def medium_test_dataset(test_data_strains, test_data_phages, test_interaction_ma
     return {
         'strain_dir': med_strain_dir,
         'phage_dir': med_phage_dir,
-        'matrix': matrix_path,
+        'interaction_matrix': matrix_path,
         'output_dir': tmp_path / 'output',
         'strain_count': len(strain_files),
         'phage_count': len(phage_files),
