@@ -168,7 +168,7 @@ def map_features(best_hits_tsv, feature_map, genome_contig_mapping, genome_type)
 
     return feature_presence
 
-def run_assign_features_workflow(input_dir, mmseqs_db, tmp_dir, output_dir, feature_map, clusters_tsv, genome_type, genome_list=None, sensitivity=7.5, coverage=0.8, min_seq_id=0.6, threads=4, suffix='faa', duplicate_all=False):
+def run_assign_features_workflow(input_dir, mmseqs_db, tmp_dir, output_dir, feature_map, clusters_tsv, genome_type, genome_list=None, sensitivity=7.5, coverage=0.8, min_seq_id=0.4, threads=4, suffix='faa', duplicate_all=False):
     """
     Process all genomes in the input directory at once, with optional list of genomes to process.
 
@@ -237,7 +237,7 @@ def main():
     parser.add_argument('--genome_list', type=str, help="Path to file with list of genomes to process.")
     parser.add_argument('--sensitivity', type=float, default=7.5, help="Sensitivity for MMseqs2 search.")
     parser.add_argument('--coverage', type=float, default=0.8, help="Minimum coverage for assignment.")
-    parser.add_argument('--min_seq_id', type=float, default=0.6, help="Minimum sequence identity for assignment.")
+    parser.add_argument('--min_seq_id', type=float, default=0.4, help="Minimum sequence identity for assignment.")
     parser.add_argument('--threads', type=int, default=4, help="Number of threads for MMseqs2.")
     parser.add_argument('--suffix', type=str, default='faa', help="Suffix for FASTA files.")
     parser.add_argument('--duplicate_all', action='store_true', help="Process all genomes even if duplicates are found.")
