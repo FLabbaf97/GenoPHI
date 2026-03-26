@@ -676,14 +676,22 @@ def run_experiments(
 
     model_metrics_path = os.path.join(base_output_dir, 'model_performance', 'model_performance_metrics.csv')
     if not os.path.exists(model_metrics_path):
-        # Now evaluate model performance and generate performance plots, depending on task type
-        evaluate_model_performance(
-            predictions_file=model_predictions_output,
-            output_dir=base_output_dir,
-            sample_column=sample_column,
-            phenotype_column=phenotype_column,
-            task_type=task_type
-        )
+        # Check if we have any predictions to evaluate (predictions file may be empty if all models failed)
+        try:
+            pred_check_df = pd.read_csv(model_predictions_output)
+            if len(pred_check_df) == 0:
+                logging.warning("No model predictions available. Skipping performance evaluation.")
+            else:
+                # Now evaluate model performance and generate performance plots, depending on task type
+                evaluate_model_performance(
+                    predictions_file=model_predictions_output,
+                    output_dir=base_output_dir,
+                    sample_column=sample_column,
+                    phenotype_column=phenotype_column,
+                    task_type=task_type
+                )
+        except pd.errors.EmptyDataError:
+            logging.warning("No model predictions available. Skipping performance evaluation.")
     else:
         logging.info(f"Model performance metrics already saved to {model_metrics_path}")
 
