@@ -20,7 +20,7 @@ def validate_output_structure(output_dir, workflow_type='protein_family'):
         workflow_type (str): Type of workflow ('protein_family', 'kmer', 'full')
 
     Returns:
-        tuple: (bool, list) - (all_valid, missing_paths)
+        dict: Validation results with keys: valid, errors
     """
     output_dir = Path(output_dir)
 
@@ -53,7 +53,10 @@ def validate_output_structure(output_dir, workflow_type='protein_family'):
         if not full_path.exists():
             missing_paths.append(str(file_path))
 
-    return (len(missing_paths) == 0, missing_paths)
+    return {
+        'valid': len(missing_paths) == 0,
+        'errors': missing_paths
+    }
 
 
 def validate_presence_absence_matrix(csv_path, expected_genomes=None):
@@ -335,11 +338,12 @@ def validate_fasta_file(fasta_path, min_sequences=1):
     return results
 
 
-def log_validation_results(results, logger=None):
+def log_validation_results(name, results, logger=None):
     """
     Log validation results in a readable format.
 
     Args:
+        name (str): Name/description of what is being validated
         results (dict): Validation results dictionary
         logger (logging.Logger, optional): Logger to use
     """
@@ -347,9 +351,9 @@ def log_validation_results(results, logger=None):
         logger = logging.getLogger(__name__)
 
     if results.get('valid', False):
-        logger.info("✓ Validation passed")
+        logger.info(f"✓ {name}: Validation passed")
     else:
-        logger.error("✗ Validation failed")
+        logger.error(f"✗ {name}: Validation failed")
 
     for error in results.get('errors', []):
         logger.error(f"  Error: {error}")
