@@ -294,6 +294,7 @@ def parse_model_predictions_and_performance(model_dir, task_type='classification
         run_dirs = sorted([x for x in os.listdir(cut_off_dir) if 'run' in x])
 
         # Parse predictions from each run
+        predictions_temp = None
         for run in run_dirs:
             predictions_file = os.path.join(cut_off_dir, run, 'best_model_predictions.csv')
             if os.path.exists(predictions_file):
@@ -303,6 +304,7 @@ def parse_model_predictions_and_performance(model_dir, task_type='classification
                 model_predictions_df = pd.concat([model_predictions_df, predictions_temp])
 
         # Parse top models summary for this cutoff
+        top_models_temp = None
         top_models_file = os.path.join(cut_off_dir, 'top_models_summary.csv')
         if os.path.exists(top_models_file):
             top_models_temp = pd.read_csv(top_models_file)
@@ -314,7 +316,11 @@ def parse_model_predictions_and_performance(model_dir, task_type='classification
             top_models_temp['cut_off'] = cut_off
             model_performance_df = pd.concat([model_performance_df, top_models_temp])
 
-    del predictions_temp, top_models_temp
+    # Clean up temporary variables if they were created
+    if 'predictions_temp' in locals() and predictions_temp is not None:
+        del predictions_temp
+    if 'top_models_temp' in locals() and top_models_temp is not None:
+        del top_models_temp
     gc.collect()
 
     return model_predictions_df, model_performance_df
