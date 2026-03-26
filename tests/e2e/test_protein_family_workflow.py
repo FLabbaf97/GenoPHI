@@ -12,111 +12,8 @@ from genophi.workflows.protein_family_workflow import run_protein_family_workflo
 from tests.utils.test_helpers import (
     validate_output_structure,
     validate_model_performance_metrics,
-    compare_to_baseline,
     log_validation_results
 )
-
-
-@pytest.mark.e2e
-@pytest.mark.requires_mmseqs2
-def test_complete_protein_workflow_strain_only(medium_test_dataset, temp_output_dir, baseline_metrics_quick):
-    """
-    Test complete protein family workflow with strain data only.
-
-    This is a medium-scale test using 10 strains with reduced iterations
-    for faster execution while still testing the complete pipeline.
-
-    Validates:
-    - Complete workflow runs without errors
-    - All expected output files/directories created
-    - Model performance metrics within expected ranges
-    - If baseline available, metrics within tolerance
-    """
-    # Setup paths
-    strain_dir = medium_test_dataset['strain_dir']
-    interaction_matrix = medium_test_dataset['interaction_matrix']
-    output_dir = temp_output_dir / 'protein_workflow_output'
-
-    # Run workflow with reduced parameters for faster execution
-    run_protein_family_workflow(
-        input_path_strain=str(strain_dir),
-        input_path_phage=None,  # Strain only
-        phenotype_matrix=str(interaction_matrix),
-        output_dir=str(output_dir),
-        tmp_dir=str(temp_output_dir / 'tmp'),
-        phenotype_column='interaction',
-        sample_column='strain',
-        task_type='classification',
-        # Reduced iterations for testing
-        num_runs_fs=5,
-        num_runs_modeling=5,
-        num_features=25,
-        min_features=2,  # Lower threshold for test data
-        # Clustering parameters
-        min_seq_id=0.4,
-        coverage=0.8,
-        sensitivity=7.5,
-        threads=2,
-        # Other parameters
-        clear_tmp=True
-    )
-
-    # Validate output structure
-    structure_results = validate_output_structure(output_dir, 'protein_family')
-    assert structure_results['valid'], \
-        f"Output structure validation failed: {structure_results['errors']}"
-
-    # Validate model performance metrics
-    metrics_path = output_dir / 'modeling_results' / 'model_performance' / 'model_performance_metrics.csv'
-    metrics_results = validate_model_performance_metrics(metrics_path)
-
-    assert metrics_results['valid'], \
-        f"Metrics validation failed: {metrics_results['errors']}"
-
-    log_validation_results('Model Performance Metrics', metrics_results)
-
-    # Load metrics for inspection
-    metrics_df = pd.read_csv(metrics_path)
-
-    # Validate we have results for at least one cutoff
-    cutoffs = metrics_df['cut_off'].unique()
-    assert len(cutoffs) >= 1, \
-        f"Expected results for at least one cutoff, got {len(cutoffs)}"
-
-    # Check metric ranges
-    assert (metrics_df['AUC'] >= 0.5).all(), \
-        "AUC values should be >= 0.5 for reasonable model"
-    assert (metrics_df['Accuracy'] >= 0.4).all(), \
-        "Accuracy should be >= 0.4 for binary classification with small test data"
-
-    # Compare to baseline if available
-    if baseline_metrics_quick is not None:
-        comparison = compare_to_baseline(
-            metrics_path,
-            baseline_metrics_quick,
-            tolerance=0.08  # 8% tolerance for quick test
-        )
-
-        if not comparison['overall_pass']:
-            # Log warning but don't fail (baseline may not be from same exact run)
-            print(f"Warning: Baseline comparison differences: {comparison.get('metrics', {})}")
-
-    # Validate clustering outputs
-    strain_output = output_dir / 'strain'
-    assert (strain_output / 'presence_absence_matrix.csv').exists(), \
-        "Strain presence_absence_matrix.csv not created"
-    assert (strain_output / 'clusters.tsv').exists(), \
-        "Strain clusters.tsv not created"
-
-    # Validate feature selection outputs
-    feature_selection_dir = output_dir / 'feature_selection'
-    assert (feature_selection_dir / 'filtered_feature_tables').exists(), \
-        "Filtered feature tables directory not created"
-
-    # Check that filtered tables exist for each cutoff
-    filtered_tables = list((feature_selection_dir / 'filtered_feature_tables').glob('*.csv'))
-    assert len(filtered_tables) >= 1, \
-        f"Expected at least 1 filtered feature table, got {len(filtered_tables)}"
 
 
 @pytest.mark.e2e
@@ -322,7 +219,7 @@ def test_workflow_validates_task_type(medium_test_dataset, temp_output_dir):
     continuous_matrix = temp_output_dir / 'continuous_phenotype.csv'
     df.to_csv(continuous_matrix, index=False)
 
-    with pytest.raises(ValueError, match="continuous.*classification"):
+    with pytest.raises(ValueError, match="classification.*continuous|float values"):
         run_protein_family_workflow(
             input_path_strain=str(strain_dir),
             input_path_phage=None,

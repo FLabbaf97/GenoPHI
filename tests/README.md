@@ -101,17 +101,6 @@ Tests use subsets of this data:
 - Medium dataset: 10 strains/phages
 - Full dataset: All 25 strains/phages
 
-## Baseline Metrics
-
-Baseline performance metrics for regression testing are stored in `tests/baselines/`:
-- `baseline_metrics_quick.csv`: 5 strains, 5 iterations
-- `baseline_metrics_standard.csv`: 10 strains, 10 iterations
-
-To regenerate baselines:
-```bash
-python scripts/generate_test_baselines.py --output-dir tests/baselines/
-```
-
 ## Continuous Integration Recommendations
 
 ### On Every Commit
@@ -148,10 +137,6 @@ pytest -v
 - Increase timeout in `pytest.ini`
 - Or run with: `pytest --timeout=1200`
 
-**Baseline comparison fails**
-- Regenerate baselines with current code
-- Or adjust tolerance in test parameters
-
 ## Structure
 
 ```
@@ -160,9 +145,6 @@ tests/
 ├── pytest.ini                   # Pytest configuration
 ├── conftest.py                  # Shared fixtures
 ├── test_smoke.py               # Smoke tests
-├── baselines/                   # Baseline metrics
-│   ├── baseline_metrics_quick.csv
-│   └── baseline_metrics_standard.csv
 ├── integration/                 # Integration tests
 │   ├── test_clustering_to_features.py
 │   ├── test_features_to_selection.py

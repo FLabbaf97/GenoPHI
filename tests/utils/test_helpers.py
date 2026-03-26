@@ -1,8 +1,8 @@
 """
 Test helper functions and validation utilities.
 
-This module provides utilities for validating GenoPHI workflow outputs,
-checking file structures, and comparing results against baselines.
+This module provides utilities for validating GenoPHI workflow outputs
+and checking file structures.
 """
 
 import os
@@ -225,66 +225,6 @@ def validate_feature_table(csv_path, min_features=1, max_features=None,
     return results
 
 
-def compare_to_baseline(results_csv, baseline_csv, tolerance=0.05):
-    """
-    Compare model performance metrics to baseline.
-
-    Args:
-        results_csv (Path or str): Path to results metrics CSV
-        baseline_csv (Path or str): Path to baseline metrics CSV
-        tolerance (float): Acceptable deviation from baseline (default: 0.05 = 5%)
-
-    Returns:
-        dict: Comparison results with pass/fail for each metric
-    """
-    try:
-        results = pd.read_csv(results_csv)
-        baseline = pd.read_csv(baseline_csv)
-
-        # Compare metrics for best performing cutoff (first row)
-        result_best = results.iloc[0]
-        baseline_best = baseline.iloc[0]
-
-        comparisons = {}
-        for metric in ['AUC', 'Accuracy', 'Precision', 'Recall', 'F1', 'MCC']:
-            if metric not in result_best or metric not in baseline_best:
-                comparisons[metric] = {
-                    'result': None,
-                    'baseline': None,
-                    'diff': None,
-                    'pass': False,
-                    'error': f'Missing {metric} in results or baseline'
-                }
-                continue
-
-            result_val = result_best[metric]
-            baseline_val = baseline_best[metric]
-            diff = abs(result_val - baseline_val)
-            within_tolerance = diff <= tolerance
-
-            comparisons[metric] = {
-                'result': result_val,
-                'baseline': baseline_val,
-                'diff': diff,
-                'tolerance': tolerance,
-                'pass': within_tolerance
-            }
-
-        # Overall pass if all metrics pass
-        overall_pass = all(c.get('pass', False) for c in comparisons.values())
-
-        return {
-            'overall_pass': overall_pass,
-            'metrics': comparisons,
-            'tolerance': tolerance
-        }
-
-    except Exception as e:
-        return {
-            'overall_pass': False,
-            'error': str(e),
-            'metrics': {}
-        }
 
 
 def validate_fasta_file(fasta_path, min_sequences=1):

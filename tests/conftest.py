@@ -48,14 +48,6 @@ def test_interaction_matrix(test_data_root):
     return matrix_path
 
 
-@pytest.fixture(scope='session')
-def baseline_dir(test_data_root):
-    """Directory containing baseline outputs for comparison."""
-    baseline = test_data_root / 'baseline_outputs'
-    # Don't skip if baseline doesn't exist - tests will handle gracefully
-    return baseline
-
-
 @pytest.fixture
 def temp_output_dir(tmp_path):
     """Temporary output directory for test runs."""
@@ -161,21 +153,3 @@ def medium_test_dataset(test_data_strains, test_data_phages, test_interaction_ma
         'phage_count': len(phage_files),
         'interaction_count': len(med_matrix)
     }
-
-
-@pytest.fixture
-def baseline_metrics_standard(baseline_dir):
-    """Load standard baseline metrics if available."""
-    metrics_path = baseline_dir / 'standard' / 'modeling_results' / 'model_performance' / 'model_performance_metrics.csv'
-    if metrics_path.exists():
-        return pd.read_csv(metrics_path)
-    return None
-
-
-@pytest.fixture
-def baseline_metrics_quick(baseline_dir):
-    """Load quick baseline metrics if available."""
-    metrics_path = baseline_dir / 'quick' / 'modeling_results' / 'model_performance' / 'model_performance_metrics.csv'
-    if metrics_path.exists():
-        return pd.read_csv(metrics_path)
-    return None
