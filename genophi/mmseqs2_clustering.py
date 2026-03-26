@@ -926,17 +926,18 @@ def cluster_and_filter_features(
     return filtered_feature_table, cluster_assignments
 
 def merge_feature_tables(
-    strain_features, 
-    phenotype_matrix, 
-    output_dir, 
-    sample_column='strain', 
-    phage_features=None, 
-    remove_suffix=False, 
+    strain_features,
+    phenotype_matrix,
+    output_dir,
+    sample_column='strain',
+    phage_features=None,
+    remove_suffix=False,
     output_file=None,
     use_feature_clustering=False,
-    feature_cluster_method='hierarchical', 
+    feature_cluster_method='hierarchical',
     feature_n_clusters=20,
-    feature_min_cluster_presence=2
+    feature_min_cluster_presence=2,
+    phenotype_column=None
 ):
     """
     Merges strain (and optionally phage) feature tables with a phenotype matrix.
@@ -982,6 +983,20 @@ def merge_feature_tables(
     # Load phenotype matrix
     phenotype_matrix_df = read_csv_with_check(phenotype_matrix)
     phenotype_matrix_df[sample_column] = phenotype_matrix_df[sample_column].astype(str)
+
+    # Filter phenotype matrix to only essential columns if phenotype_column is specified
+    # This prevents metadata columns from leaking into the feature table
+    if phenotype_column is not None:
+        essential_cols = [sample_column]
+        if phage_features:
+            essential_cols.append('phage')
+        if phenotype_column not in essential_cols:
+            essential_cols.append(phenotype_column)
+
+        # Keep only essential columns that exist in the phenotype matrix
+        cols_to_keep = [col for col in essential_cols if col in phenotype_matrix_df.columns]
+        phenotype_matrix_df = phenotype_matrix_df[cols_to_keep]
+        logging.info(f'Filtered phenotype matrix to essential columns: {cols_to_keep}')
 
     if phage_features:
         # If phage features are provided, merge strain, phage, and phenotype matrices

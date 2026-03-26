@@ -92,7 +92,7 @@ def run_protein_family_workflow(
     tmp_dir="tmp", 
     input_path_phage=None, 
     clustering_dir=None,
-    min_seq_id=0.6, 
+    min_seq_id=0.4, 
     coverage=0.8, 
     sensitivity=7.5, 
     suffix='faa', 
@@ -146,7 +146,7 @@ def run_protein_family_workflow(
         tmp_dir (str): Directory for temporary files (default: "tmp").
         input_path_phage (str, optional): Path to the input directory or file for phage clustering.
         clustering_dir (str, optional): Path to existing clustering results to reuse.
-        min_seq_id (float): Minimum sequence identity for clustering (default: 0.6).
+        min_seq_id (float): Minimum sequence identity for clustering (default: 0.4).
         coverage (float): Minimum coverage for clustering (default: 0.8).
         sensitivity (float): Sensitivity for clustering (default: 7.5).
         suffix (str): Suffix for input FASTA files (default: 'faa').
@@ -196,7 +196,7 @@ def run_protein_family_workflow(
     max_ram_usage = 0
 
     # Initialize counters for report
-    input_genomes = protein_families = 0
+    input_genomes = protein_families = features = strain_feature_count = 0
     phage_feature_count = None
 
     try:
@@ -316,7 +316,8 @@ def run_protein_family_workflow(
                 use_feature_clustering=use_feature_clustering,
                 feature_cluster_method=feature_cluster_method,
                 feature_n_clusters=feature_n_clusters,
-                feature_min_cluster_presence=feature_min_cluster_presence
+                feature_min_cluster_presence=feature_min_cluster_presence,
+                phenotype_column=phenotype_column
             )
             logging.info(f"Merged feature table saved in: {merged_output_dir}")
         else:
@@ -331,7 +332,8 @@ def run_protein_family_workflow(
                 use_feature_clustering=use_feature_clustering,
                 feature_cluster_method=feature_cluster_method,
                 feature_n_clusters=feature_n_clusters,
-                feature_min_cluster_presence=feature_min_cluster_presence
+                feature_min_cluster_presence=feature_min_cluster_presence,
+                phenotype_column=phenotype_column
             )
             logging.info(f"Strain feature table merged and saved at: {feature_selection_input}")
 
@@ -558,7 +560,7 @@ def main():
 
     # Clustering parameters
     clustering_group = parser.add_argument_group('Clustering')
-    clustering_group.add_argument('--min_seq_id', type=float, default=0.6, help='Minimum sequence identity for clustering (default: 0.6).')
+    clustering_group.add_argument('--min_seq_id', type=float, default=0.4, help='Minimum sequence identity for clustering (default: 0.4).')
     clustering_group.add_argument('--coverage', type=float, default=0.8, help='Minimum coverage for clustering (default: 0.8).')
     clustering_group.add_argument('--sensitivity', type=float, default=7.5, help='Sensitivity for clustering (default: 7.5).')
     clustering_group.add_argument('--compare', action='store_true', help='Compare original clusters with assigned clusters.')
