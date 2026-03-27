@@ -28,7 +28,8 @@ def kmer_analysis_workflow(
     annotation_file=None,
     model_output_dir=None,
     quick_run=False,
-    ignore_families=False
+    ignore_families=False,
+    genome_mapping_file=None
 ):
     """
     Workflow that supports both standard protein family alignment 
@@ -147,13 +148,136 @@ def kmer_analysis_workflow(
     
     # 7. Segments & Plotting
     segments_df = identify_segments(coverage_df)
-    
+
     # SAVE OUTPUT
     segments_df.to_csv(os.path.join(type_output_dir, 'segments_df.csv'), index=False)
-    
+
     plot_dir = os.path.join(type_output_dir, 'plots')
     plot_segments(segments_df, plot_dir)
-    
+
+    # 7.5. Extract segment sequences for covered segments
+    logging.info("Extracting segment sequences for covered segments...")
+    covered_segments = segments_df[segments_df['segment_type'] == 1].copy()
+
+    if not covered_segments.empty:
+        # Merge with aligned sequences
+        covered_segments = covered_segments.merge(
+            final_aligned_df[['protein_ID', 'aln_sequence']].drop_duplicates(),
+            on='protein_ID',
+            how='left'
+        )
+
+        # Extract segment sequences (with and without gaps)
+        def extract_segment_seq(row):
+            if pd.isna(row['aln_sequence']):
+                return pd.Series(['', '', 0, 0, 0, 0])
+
+            aln_seq = row['aln_sequence']
+            start_aln = row['start']
+            stop_aln = row['stop']
+
+            # Extract segment with gaps
+            segment_with_gaps = aln_seq[start_aln:stop_aln+1]
+            segment_no_gaps = segment_with_gaps.replace('-', '')
+            segment_length = stop_aln - start_aln + 1
+            aa_count = len(segment_no_gaps)
+
+            # Calculate ungapped positions (positions in the original gene, not alignment)
+            # Count non-gap characters before the start and stop positions
+            start_ungapped = sum(1 for c in aln_seq[:start_aln] if c != '-')
+            stop_ungapped = sum(1 for c in aln_seq[:stop_aln+1] if c != '-') - 1
+
+            return pd.Series([segment_with_gaps, segment_no_gaps, segment_length, aa_count, start_ungapped, stop_ungapped])
+
+        covered_segments[['segment_sequence', 'segment_sequence_nogaps', 'segment_length', 'aa_count', 'start_ungapped', 'stop_ungapped']] = \
+            covered_segments.apply(extract_segment_seq, axis=1)
+
+        # Add full ungapped protein sequences
+        covered_segments = covered_segments.merge(
+            aa_sequences_df[['protein_ID', 'sequence']].drop_duplicates().rename(columns={'sequence': 'full_sequence'}),
+            on='protein_ID',
+            how='left'
+        )
+
+        # Add genome/strain information (if available)
+        genome_col_added = False
+
+        if feature_type in full_df.columns:
+            # Standard mode: feature_type already in full_df (from protein_families_file)
+            covered_segments = covered_segments.merge(
+                full_df[['protein_ID', feature_type]].drop_duplicates(),
+                on='protein_ID',
+                how='left'
+            )
+            covered_segments = covered_segments.rename(columns={feature_type: 'genome'})
+            genome_col_added = True
+
+        elif genome_mapping_file and os.path.exists(genome_mapping_file):
+            # Ignore_families mode: load from separate genome_mapping_file
+            logging.info(f"Loading genome/strain mapping from {genome_mapping_file}")
+            try:
+                mapping_df = pd.read_csv(genome_mapping_file)
+
+                # Look for genome column with flexible naming
+                possible_cols = ['phage', 'genome', 'strain', 'species', 'genus', feature_type]
+                found_col = None
+                for col in possible_cols:
+                    if col in mapping_df.columns:
+                        found_col = col
+                        break
+
+                if found_col and 'protein_ID' in mapping_df.columns:
+                    genome_mapping = mapping_df[['protein_ID', found_col]].drop_duplicates()
+                    covered_segments = covered_segments.merge(genome_mapping, on='protein_ID', how='left')
+                    covered_segments = covered_segments.rename(columns={found_col: 'genome'})
+                    genome_col_added = True
+                    logging.info(f"Added genome information from column '{found_col}'")
+                else:
+                    logging.warning(f"No suitable genome column found in {genome_mapping_file}. Skipping.")
+            except Exception as e:
+                logging.warning(f"Failed to load genome mapping: {e}")
+
+        else:
+            logging.info(f"No genome/strain information available. Skipping this column in output.")
+
+        # Select and reorder columns (conditionally include 'genome' if available)
+        if genome_col_added:
+            output_cols = ['Feature', 'genome', 'protein_ID', 'cluster_id',
+                           'segment_sequence_nogaps', 'segment_sequence',
+                           'start_ungapped', 'stop_ungapped', 'aa_count',
+                           'full_sequence',
+                           'start', 'stop', 'segment_length']
+            sort_cols = ['Feature', 'genome', 'protein_ID', 'start_ungapped']
+        else:
+            output_cols = ['Feature', 'protein_ID', 'cluster_id',
+                           'segment_sequence_nogaps', 'segment_sequence',
+                           'start_ungapped', 'stop_ungapped', 'aa_count',
+                           'full_sequence',
+                           'start', 'stop', 'segment_length']
+            sort_cols = ['Feature', 'protein_ID', 'start_ungapped']
+
+        output_cols = [col for col in output_cols if col in covered_segments.columns]
+        covered_segments_output = covered_segments[output_cols].copy()
+
+        # Drop duplicates
+        n_before = len(covered_segments_output)
+        covered_segments_output = covered_segments_output.drop_duplicates()
+        n_after = len(covered_segments_output)
+        if n_before > n_after:
+            logging.info(f"Removed {n_before - n_after} duplicate covered segments")
+
+        # Sort for readability
+        covered_segments_output = covered_segments_output.sort_values(sort_cols)
+
+        # SAVE OUTPUT
+        covered_segments_output.to_csv(
+            os.path.join(type_output_dir, 'covered_segments_with_sequences.csv'),
+            index=False
+        )
+        logging.info(f"Saved {len(covered_segments_output)} covered segments with sequences")
+    else:
+        logging.warning("No covered segments found to extract sequences from")
+
     # 8. Optional SHAP
     if model_output_dir:
         shap_df = aggregate_shap_values(model_output_dir)

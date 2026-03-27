@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "genophi"
-version = "0.1.0"
+version = "1.0.0"
 description = "Whole-genome genotype-to-phenotype modeling with focus on phage-host interaction prediction"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -44,10 +44,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/Noonanav/genophi"
-Documentation = "https://github.com/Noonanav/genophi#readme"
-Repository = "https://github.com/Noonanav/genophi"
-Issues = "https://github.com/Noonanav/genophi/issues"
+Homepage = "https://github.com/Noonanav/GenoPHI"
+Documentation = "https://github.com/Noonanav/GenoPHI#readme"
+Repository = "https://github.com/Noonanav/GenoPHI"
+Issues = "https://github.com/Noonanav/GenoPHI/issues"
 
 [project.scripts]
 # Main unified CLI entry point
@@ -66,5 +66,23 @@ dev = [
 [tool.setuptools]
 packages = ["genophi", "genophi.workflows"]
 
-[tool.setuptools.package-data]
-genophi = ["py.typed"]
+[tool.pytest.ini_options]
+# Test markers for organizing test runs
+markers = [
+    "smoke: Quick smoke tests for package installation verification (<5 seconds)",
+    "unit: Unit tests for individual functions (seconds)",
+    "integration: Integration tests for module-to-module interactions (~30-45 min)",
+    "e2e: End-to-end tests for complete workflows (~60-90 min)",
+    "slow: Slow-running tests (may take >30 minutes)",
+    "full: Full regression tests with production parameters (~2-3 hours)",
+    "requires_mmseqs2: Tests that require MMSeqs2 to be installed",
+]
+
+# Test paths
+testpaths = ["tests"]
+
+# Warnings to ignore
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]

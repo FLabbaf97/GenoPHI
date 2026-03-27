@@ -17,7 +17,7 @@ from hdbscan import HDBSCAN
 import time
 
 # Function to load and prepare data
-def load_and_prepare_data(input_path, sample_column=None, phenotype_column=None, filter_type='none'):
+def load_and_prepare_data(input_path, sample_column=None, phenotype_column=None, filter_type='none', task_type='classification'):
     """
     Loads the input feature table, drops unnecessary columns, and splits into features and target.
 
@@ -25,19 +25,23 @@ def load_and_prepare_data(input_path, sample_column=None, phenotype_column=None,
         input_path (str): Path to the input CSV file containing the full feature table.
         sample_column (str): Optional name of the column to retain for sample identifiers.
         phenotype_column (str): Optional name of the column to retain for phenotype information.
+        filter_type (str): Filter type for the dataset ('none', 'strain', 'phage', 'dataset').
+        task_type (str): Task type ('classification' or 'regression') for validation. Default is 'classification'.
 
     Returns:
         X (DataFrame): Features for modeling.
         y (Series): Target variable (interaction).
         full_feature_table (DataFrame): The complete feature table after cleaning.
     """
+    from genophi.utils import validate_phenotype_task_type
+
     if not os.path.exists(input_path):
         raise FileNotFoundError(f"The input file {input_path} does not exist.")
-    
+
     full_feature_table = pd.read_csv(input_path)
     if full_feature_table.empty:
         raise ValueError("Input data is empty.")
-    
+
     if full_feature_table.isnull().any().any():
         print("Removing rows with missing values...")
         full_feature_table.dropna(inplace=True)
@@ -51,7 +55,10 @@ def load_and_prepare_data(input_path, sample_column=None, phenotype_column=None,
          raise ValueError(f"Target column '{target_column}' not found in input data.")
     y = full_feature_table[target_column]
 
-    # 2. Define Columns to Drop (Metadata + Target)
+    # 2. Validate that phenotype data type matches task type
+    validate_phenotype_task_type(y, task_type, target_column)
+
+    # 3. Define Columns to Drop (Metadata + Target)
     drop_columns = ['strain', 'phage', 'header', 'contig_id', 'orf_ko', filter_type, target_column]
     
     # Handle sample column logic
@@ -316,7 +323,8 @@ def filter_data(
             logging.warning("No matching feature columns found for cluster/group-based filtering")
 
     # ---- 5️⃣ Perform Group-Based Splitting (Clustering or Normal) ----
-    groups = full_feature_table[group_col].unique()
+    # Sort groups to ensure deterministic order (pandas unique() order is not guaranteed)
+    groups = np.sort(full_feature_table[group_col].unique())
 
     # Calculate group/cluster sizes for sample-based splitting
     group_sizes = {}
@@ -829,7 +837,7 @@ def chi_squared_feature_selection(X_train, y_train, num_features):
     print(f"Chi-Squared Test selected {len(selected_features)} features.")
     return X_train_selected, selected_features
 
-def lasso_feature_selection(X_train, y_train, num_features, task_type='classification'):
+def lasso_feature_selection(X_train, y_train, num_features, task_type='classification', random_state=42):
     """
     Selects top features using Lasso regularization for classification or regression.
 
@@ -838,6 +846,7 @@ def lasso_feature_selection(X_train, y_train, num_features, task_type='classific
         y_train (Series): Training target.
         num_features (int): Number of top features to select.
         task_type (str): Task type ('classification' or 'regression').
+        random_state (int): Random seed for reproducibility.
 
     Returns:
         X_train_selected (DataFrame): Transformed training features with selected features.
@@ -847,9 +856,9 @@ def lasso_feature_selection(X_train, y_train, num_features, task_type='classific
 
     # Choose model based on task type
     if task_type == 'classification':
-        model = LogisticRegression(penalty='l1', solver='liblinear', max_iter=1000)
+        model = LogisticRegression(penalty='l1', solver='liblinear', max_iter=1000, random_state=random_state)
     elif task_type == 'regression':
-        model = Lasso(max_iter=1000)
+        model = Lasso(max_iter=1000, random_state=random_state)
     else:
         raise ValueError("task_type must be 'classification' or 'regression'")
     
@@ -1444,8 +1453,10 @@ def run_feature_selection_iterations(
             if not os.path.exists(output_dir):
                 os.makedirs(output_dir)
             random_state = i
+            # Set global random seeds for full reproducibility
+            np.random.seed(random_state)
 
-            X, y, full_feature_table = load_and_prepare_data(input_path, sample_column=sample_column, phenotype_column=phenotype_column, filter_type=filter_type)
+            X, y, full_feature_table = load_and_prepare_data(input_path, sample_column=sample_column, phenotype_column=phenotype_column, filter_type=filter_type, task_type=task_type)
             X_train, X_test, y_train, y_test, X_test_sample_ids, X_train_sample_ids = filter_data(
                 X, y, 
                 full_feature_table, 
@@ -1483,7 +1494,7 @@ def run_feature_selection_iterations(
             elif method == 'chi_squared' and task_type == 'classification':
                 X_train, selected_features = chi_squared_feature_selection(X_train, y_train, num_features)
             elif method == 'lasso':
-                X_train, selected_features = lasso_feature_selection(X_train, y_train, num_features, task_type=task_type)
+                X_train, selected_features = lasso_feature_selection(X_train, y_train, num_features, task_type=task_type, random_state=random_state)
             elif method == 'shap':
                 X_train, selected_features = shap_feature_selection(X_train, y_train, num_features, threads, task_type=task_type, max_ram=max_ram, random_state=random_state)
             else:
@@ -1558,13 +1569,13 @@ def run_feature_selection_iterations(
     print(f"Feature selection iterations completed in {end_total_time - start_total_time:.2f} seconds.")
 
 def generate_feature_tables(
-    model_testing_dir, full_feature_table_file, filter_table_dir, 
+    model_testing_dir, full_feature_table_file, filter_table_dir,
     phenotype_column=None, sample_column='strain', cut_offs=[3, 5, 7, 10, 15, 20, 25, 30, 35, 40, 45, 50],
-    binary_data=False, max_features=None, filter_type='strain'
+    binary_data=False, max_features=None, min_features=None, filter_type='strain'
 ):
     """
     Generate and save feature tables based on feature selection results from multiple runs in the main directory.
-    
+
     Args:
         model_testing_dir (str): Directory containing feature selection runs.
         full_feature_table_file (str): Path to the full feature table CSV.
@@ -1573,6 +1584,11 @@ def generate_feature_tables(
         sample_column (str): Column name for the sample or strain identifier.
         cut_offs (list): List of thresholds for feature occurrences to be used for filtering.
         binary_data (bool): If True, converts feature values to binary (1/0). Default is False for continuous values.
+        max_features (int, float, str, or None): Maximum number of features (exclusive upper bound).
+            If None, auto-calculated based on interaction count. Can be passed as string 'none'.
+        min_features (int, str, or None): Minimum number of features required (inclusive lower bound).
+            If None, auto-calculated based on interaction count. Can be passed as string 'none'.
+        filter_type (str): Type of filter to apply ('strain', 'phage', etc.).
     """
     if phenotype_column is None:
         phenotype_column = 'interaction'
@@ -1581,7 +1597,7 @@ def generate_feature_tables(
     interaction_count = full_feature_table.shape[0]
     print('Interaction count:', interaction_count)
 
-    run_dirs = [x for x in os.listdir(model_testing_dir) if 'run' in x]
+    run_dirs = sorted([x for x in os.listdir(model_testing_dir) if 'run' in x])
     features_occurrence = {}
 
     for run in run_dirs:
@@ -1605,7 +1621,19 @@ def generate_feature_tables(
                 logging.warning(f"Invalid max_features value: {max_features}. Using default calculation.")
                 max_features = None
 
-    min_features = 5 if interaction_count < 500 else 20
+    # Validate and convert min_features if it is passed as a string (e.g., from CLI args)
+    if isinstance(min_features, str):
+        if min_features.lower() == 'none':
+            min_features = None
+        else:
+            try:
+                min_features = int(min_features)
+            except ValueError:
+                logging.warning(f"Invalid min_features value: {min_features}. Using default calculation.")
+                min_features = None
+
+    if min_features is None:
+        min_features = 5 if interaction_count < 500 else 20
     if max_features is None:
         max_features = interaction_count / 10 if interaction_count < 500 else interaction_count / 20
 
@@ -1614,7 +1642,7 @@ def generate_feature_tables(
         num_features = len(features_occurrence_filter)
         print(f'Cut-off: {cut_off} - Features: {num_features}')
 
-        if min_features < num_features < max_features:
+        if min_features <= num_features < max_features:
             select_features = features_occurrence_filter['Feature'].tolist()
             id_vars = [sample_column]
             if 'phage' in full_feature_table.columns:

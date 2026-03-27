@@ -40,7 +40,7 @@ def run_full_feature_workflow(
     phenotype_matrix, 
     tmp_dir="tmp", 
     input_path_phage=None, 
-    min_seq_id=0.6, 
+    min_seq_id=0.4, 
     coverage=0.8, 
     sensitivity=7.5, 
     suffix='faa', 
@@ -199,7 +199,7 @@ def main():
     parser.add_argument('-pm', '--phenotype_matrix', type=str, required=True, help='Path to the phenotype matrix.')
     parser.add_argument('-o', '--output', type=str, required=True, help='Output directory to save results.')
     parser.add_argument('--tmp', type=str, default="tmp", help='Temporary directory for intermediate files.')
-    parser.add_argument('--min_seq_id', type=float, default=0.6, help='Minimum sequence identity for clustering.')
+    parser.add_argument('--min_seq_id', type=float, default=0.4, help='Minimum sequence identity for clustering.')
     parser.add_argument('--coverage', type=float, default=0.8, help='Minimum coverage for clustering.')
     parser.add_argument('--sensitivity', type=float, default=7.5, help='Sensitivity for clustering.')
     parser.add_argument('--suffix', type=str, default='faa', help='Suffix for input FASTA files.')

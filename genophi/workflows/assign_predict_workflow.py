@@ -7,7 +7,7 @@ from genophi.workflows.prediction_workflow import run_prediction_workflow
 
 def assign_predict_workflow(input_dir, mmseqs_db, clusters_tsv, feature_map, tmp_dir, output_dir, model_dir, 
                             feature_table=None, strain_feature_table_path=None, phage_feature_table_path=None, 
-                            genome_type='strain', genome_list=None, sensitivity=7.5, coverage=0.8, min_seq_id=0.6, 
+                            genome_type='strain', genome_list=None, sensitivity=7.5, coverage=0.8, min_seq_id=0.4, 
                             threads=4, suffix='faa', duplicate_all=False):
     """
     Runs the full assignment and prediction workflow in sequence.

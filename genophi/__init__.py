@@ -5,7 +5,7 @@ A Python package for whole-genome genotype-to-phenotype modeling with a focus
 on phage-host interaction prediction.
 """
 
-__version__ = "0.1.0"
+__version__ = "1.0.1"
 __author__ = "Avery Noonan"
 __license__ = "MIT"
 __url__ = "https://github.com/Noonanav/genophi"
@@ -48,6 +48,13 @@ from .feature_annotations import (
     parse_and_filter_aa_sequences
 )
 
+# Utility and validation functions
+from .utils import (
+    validate_phenotype_task_type,
+    validate_file,
+    validate_directory
+)
+
 __all__ = [
     # Metadata
     '__version__',
@@ -80,5 +87,9 @@ __all__ = [
     # Annotations
     'get_predictive_proteins',
     'merge_annotation_table',
-    'parse_and_filter_aa_sequences'
+    'parse_and_filter_aa_sequences',
+    # Utilities and validation
+    'validate_phenotype_task_type',
+    'validate_file',
+    'validate_directory'
 ]

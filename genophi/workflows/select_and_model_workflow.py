@@ -52,9 +52,10 @@ def run_modeling_workflow_from_feature_table(
     phage_feature2cluster_path=None, 
     phage_cluster2protein_path=None,
     phage_fasta_dir_or_file=None, 
-    task_type='classification', 
-    binary_data=False, 
+    task_type='classification',
+    binary_data=False,
     max_features='none',
+    min_features='none',
     use_dynamic_weights=False,
     weights_method='log10',
     use_clustering=True,
@@ -142,6 +143,7 @@ def run_modeling_workflow_from_feature_table(
     # Step 2: Generate feature tables from feature selection results
     logging.info("Generating feature tables from feature selection results...")
     max_features = None if max_features == 'none' else int(max_features)
+    min_features_val = None if min_features == 'none' else int(min_features)
     filter_table_dir = os.path.join(base_fs_output_dir, 'filtered_feature_tables')
     generate_feature_tables(
         model_testing_dir=base_fs_output_dir,
@@ -152,6 +154,7 @@ def run_modeling_workflow_from_feature_table(
         cut_offs=[3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 22, 25, 27, 30, 32, 35, 37, 40, 42, 45, 47, 50],
         binary_data=binary_data,
         max_features=max_features,
+        min_features=min_features_val,
         filter_type=filter_type
     )
 
@@ -250,6 +253,7 @@ def main():
     fs_modeling_group.add_argument('--task_type', type=str, default='classification', choices=['classification', 'regression'], help="Specify 'classification' or 'regression' task (default: classification).")
     fs_modeling_group.add_argument('--binary_data', action='store_true', help='If set, converts feature values to binary (1/0); otherwise, continuous values are kept.')
     fs_modeling_group.add_argument('--max_features', default='none', help='Maximum number of features to include in the feature tables.')
+    fs_modeling_group.add_argument('--min_features', default='none', help='Minimum number of features required for a cutoff threshold (default: auto-calculated based on dataset size).')
     fs_modeling_group.add_argument('--use_shap', action='store_true', help='If set, calculate and save SHAP values.')
     fs_modeling_group.add_argument('--use_dynamic_weights', action='store_true', help='If set, use dynamic weights for feature selection.')
     fs_modeling_group.add_argument('--weights_method', default='log10', choices=['log10', 'inverse_frequency', 'balanced'], help='Method to calculate class weights (default: log10)')

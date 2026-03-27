@@ -62,7 +62,7 @@ def detect_duplicate_ids(input_path, suffix='faa', strains_to_process=None, inpu
     protein_id_tracker = defaultdict(set)
 
     if input_type == 'directory':
-        file_list = os.listdir(input_path)
+        file_list = sorted(os.listdir(input_path))
     elif input_type == 'file':
         file_list = [input_path]
     else:
@@ -103,7 +103,7 @@ def modify_duplicate_ids(input_path, output_dir, suffix='faa', strains_to_proces
     modified_file_dir = os.path.join(output_dir, 'modified_AAs', strain_column)
     os.makedirs(modified_file_dir, exist_ok=True)
 
-    for file_name in os.listdir(input_path):
+    for file_name in sorted(os.listdir(input_path)):
         if file_name.endswith(suffix):
             strain_name = file_name.replace(f".{suffix}", "")
             if strains_to_process and strain_name not in strains_to_process:
@@ -146,7 +146,8 @@ def create_mmseqs_database(input_path, db_name, suffix, input_type, strains, thr
     strains = [str(s) for s in strains] if strains else None
     if input_type == 'directory':
         logging.info(f"Searching for FASTA files with suffix '{suffix}' in {input_path}.")
-        for fasta in os.listdir(input_path):
+        # Sort to ensure deterministic order (os.listdir order is not guaranteed)
+        for fasta in sorted(os.listdir(input_path)):
             if fasta.endswith(suffix):
                 strain_name = fasta.replace(f".{suffix}", "")
                 if strains is None or strain_name in strains:
@@ -306,14 +307,16 @@ def create_contig_to_genome_dict(fasta_files, input_type, suffix='faa'):
             genome_list.append(genome_name)
             for record in SeqIO.parse(fasta, "fasta"):
                 contig_to_genome[record.id] = genome_name
+        # Sort genome_list to ensure deterministic order (even though fasta_files is sorted)
+        genome_list = sorted(genome_list)
     else:
         for record in SeqIO.parse(fasta_files[0], "fasta"):
             protein_id = record.id
             genome_name = '_'.join(protein_id.split(' # ')[0].split('_')[:-1])
             genome_list.append(genome_name)
             contig_to_genome[protein_id] = genome_name
-        genome_list = list(set(genome_list))
-    
+        genome_list = sorted(list(set(genome_list)))
+
     logging.info(f"Created contig to genome dictionary with {len(contig_to_genome)} entries.")
     return contig_to_genome, genome_list
 
@@ -493,6 +496,12 @@ def generate_presence_absence_matrix(best_hits_tsv, output_csv_path, contig_to_g
         presence_absence_data[cluster_id] = [1 if genome in genomes else 0 for genome in genome_list]
 
     presence_absence_df = pd.DataFrame(presence_absence_data)
+
+    # Sort columns to ensure deterministic order (cluster_dict iteration order depends on insertion order)
+    # Keep 'Genome' as first column, sort all cluster columns
+    cluster_columns = sorted([col for col in presence_absence_df.columns if col != 'Genome'])
+    presence_absence_df = presence_absence_df[['Genome'] + cluster_columns]
+
     presence_absence_df.to_csv(output_csv_path, index=False)
     logging.info(f"Presence-absence matrix saved to {output_csv_path}")
 
@@ -636,9 +645,13 @@ def feature_assignment(genome_assignments, selected_features, genome_column_name
 
     # Create the feature table in wide format using pivot_table
     feature_table = assignment_df.pivot_table(index=genome_column_name, columns="Feature", aggfunc="size", fill_value=0)
-    
+
     # Reset the index to turn the genome_column_name (strain/phage) back into a regular column
     feature_table = feature_table.reset_index()
+
+    # Sort feature columns to ensure deterministic order
+    feature_columns = sorted([col for col in feature_table.columns if col != genome_column_name])
+    feature_table = feature_table[[genome_column_name] + feature_columns]
 
     return assignment_df, feature_table
 
@@ -743,7 +756,7 @@ def run_clustering_workflow(input_path, output_dir, tmp_dir="tmp", min_seq_id=0.
         fasta_files = []
         strains = [str(s) for s in strains_to_process] if strains_to_process else None
         if input_type == 'directory':
-            for fasta in os.listdir(input_path):
+            for fasta in sorted(os.listdir(input_path)):
                 if fasta.endswith(suffix):
                     strain_name = fasta.replace(f".{suffix}", "")
                     if strains is None or strain_name in strains:
@@ -913,17 +926,18 @@ def cluster_and_filter_features(
     return filtered_feature_table, cluster_assignments
 
 def merge_feature_tables(
-    strain_features, 
-    phenotype_matrix, 
-    output_dir, 
-    sample_column='strain', 
-    phage_features=None, 
-    remove_suffix=False, 
+    strain_features,
+    phenotype_matrix,
+    output_dir,
+    sample_column='strain',
+    phage_features=None,
+    remove_suffix=False,
     output_file=None,
     use_feature_clustering=False,
-    feature_cluster_method='hierarchical', 
+    feature_cluster_method='hierarchical',
     feature_n_clusters=20,
-    feature_min_cluster_presence=2
+    feature_min_cluster_presence=2,
+    phenotype_column=None
 ):
     """
     Merges strain (and optionally phage) feature tables with a phenotype matrix.
@@ -969,6 +983,20 @@ def merge_feature_tables(
     # Load phenotype matrix
     phenotype_matrix_df = read_csv_with_check(phenotype_matrix)
     phenotype_matrix_df[sample_column] = phenotype_matrix_df[sample_column].astype(str)
+
+    # Filter phenotype matrix to only essential columns if phenotype_column is specified
+    # This prevents metadata columns from leaking into the feature table
+    if phenotype_column is not None:
+        essential_cols = [sample_column]
+        if phage_features:
+            essential_cols.append('phage')
+        if phenotype_column not in essential_cols:
+            essential_cols.append(phenotype_column)
+
+        # Keep only essential columns that exist in the phenotype matrix
+        cols_to_keep = [col for col in essential_cols if col in phenotype_matrix_df.columns]
+        phenotype_matrix_df = phenotype_matrix_df[cols_to_keep]
+        logging.info(f'Filtered phenotype matrix to essential columns: {cols_to_keep}')
 
     if phage_features:
         # If phage features are provided, merge strain, phage, and phenotype matrices

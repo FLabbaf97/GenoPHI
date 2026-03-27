@@ -56,7 +56,7 @@ def create_parser():
         epilog='Use genophi <command> --help for detailed information on each command.'
     )
     
-    parser.add_argument('--version', action='version', version='genophi 0.1.0')
+    parser.add_argument('--version', action='version', version='genophi 1.0.0')
     subparsers = parser.add_subparsers(dest='command', required=True,
                                        help='Available commands')
     
@@ -130,8 +130,8 @@ def create_parser():
                    help='Feature selection method (default: rfe)')
     p.add_argument('--num_features', default='none',
                    help='Number of features to select or "none" for automatic (default: none)')
-    p.add_argument('--num_runs', type=int, default=50,
-                   help='Number of feature selection iterations (default: 50)')
+    p.add_argument('--num_runs', type=int, default=25,
+                   help='Number of feature selection iterations (default: 25)')
     p.add_argument('--filter_type', default='none', choices=['none', 'strain', 'phage'],
                    help='Filter type for input data (default: none)')
     p.add_argument('--phenotype_column',
@@ -144,6 +144,8 @@ def create_parser():
                    help='Feature values are binary (0/1)')
     p.add_argument('--max_features', default='none',
                    help='Maximum number of features to include (default: none)')
+    p.add_argument('--min_features', default='none',
+                   help='Minimum number of features required for a cutoff threshold (default: auto)')
     p.add_argument('--use_dynamic_weights', action='store_true',
                    help='Use dynamic feature weights')
     p.add_argument('--weights_method', default='inverse_frequency',
@@ -339,6 +341,8 @@ def create_parser():
                    help='Modeling task type (default: classification)')
     p.add_argument('--max_features', default='none',
                    help='Maximum features to include (default: none)')
+    p.add_argument('--min_features', default='none',
+                   help='Minimum number of features required for a cutoff threshold (default: auto)')
     p.add_argument('--max_ram', type=float, default=16,
                    help='Maximum RAM in GB (default: 16)')
     p.add_argument('--binary_data', action='store_true',
@@ -461,6 +465,8 @@ def create_parser():
                 help='Type of prediction task (default: classification)')
     p.add_argument('--max_features', default='none',
                 help='Maximum number of features for modeling (default: none)')
+    p.add_argument('--min_features', default='none',
+                help='Minimum number of features required for a cutoff threshold (default: auto)')
 
     # Clustering-based filtering (for samples)
     p.add_argument('--use_clustering', action='store_true',
@@ -622,6 +628,8 @@ def create_parser():
                    help='Directory with phage FASTA files (optional)')
     p.add_argument('--phenotype_matrix', '-pm', required=True,
                    help='Path to phenotype matrix')
+    p.add_argument('--no-modeling', action='store_false', dest='modeling',
+                   help='Generate feature tables but skip feature selection and modeling steps')
     p.add_argument('--output', '-o', required=True,
                    help='Output directory')
     p.add_argument('--k', type=int, default=5,
@@ -677,6 +685,7 @@ def create_parser():
     p.add_argument('--check_feature_presence', action='store_true')
     p.add_argument('--filter_by_cluster_presence', action='store_true')
     p.add_argument('--min_cluster_presence', type=int, default=2)
+    p.set_defaults(modeling=True)
     add_common_args(p)
     
     # KMER-ASSIGN-FEATURES - Assign k-mer features to new genomes
@@ -821,6 +830,9 @@ def create_parser():
                    help='Path to the feature-to-cluster mapping file (CSV)')
     p.add_argument('--protein_families_file', required=False, # CHANGED TO FALSE
                    help='Path to the protein families file (CSV). Required unless --ignore_families is set.')
+    p.add_argument('--genome_mapping_file', required=False,
+                   help='Path to genome/strain mapping file (CSV with protein_ID and genome columns). '
+                        'Optional for ignore_families mode to add genome information to output.')
     p.add_argument('--output_dir', '-o', required=True,
                    help='Directory where output files/plots will be saved')
     p.add_argument('--feature_type', default='strain', choices=['strain', 'phage', 'host'],
@@ -895,6 +907,7 @@ def run_select_features(args):
         phage_column=args.phage_column,
         binary_data=args.binary_data,
         max_features=args.max_features,
+        min_features=args.min_features,
         use_dynamic_weights=args.use_dynamic_weights,
         weights_method=args.weights_method,
         use_clustering=args.use_clustering,
@@ -1038,6 +1051,7 @@ def run_select_and_train(args):
         protein_id_col=args.protein_id_col,
         task_type=args.task_type,
         max_features=args.max_features,
+        min_features=args.min_features,
         max_ram=args.max_ram,
         binary_data=args.binary_data,
         use_dynamic_weights=args.use_dynamic_weights,
@@ -1172,7 +1186,8 @@ def run_kmer_workflow(args):
         weights_method=args.weights_method,
         check_feature_presence=args.check_feature_presence,
         filter_by_cluster_presence=args.filter_by_cluster_presence,
-        min_cluster_presence=args.min_cluster_presence
+        min_cluster_presence=args.min_cluster_presence,
+        modeling=args.modeling
     )
 
 
@@ -1317,6 +1332,7 @@ def protein_family_workflow_command(args):
         protein_id_col=args.protein_id_col,
         task_type=args.task_type,
         max_features=args.max_features,
+        min_features=args.min_features,
         max_ram=args.max_ram,
         use_dynamic_weights=args.use_dynamic_weights,
         weights_method=args.weights_method,
@@ -1368,7 +1384,8 @@ def run_kmer_analysis(args):
         annotation_file=args.annotation_file,
         model_output_dir=args.model_output_dir,
         quick_run=args.quick_run,
-        ignore_families=args.ignore_families
+        ignore_families=args.ignore_families,
+        genome_mapping_file=args.genome_mapping_file
     )
 
 def main():

@@ -92,7 +92,19 @@ manuscript_scripts/results_analysis/*.csv
 tmp/
 mmseqs_tmp/
 
+# Test output files (keep only baseline CSVs for comparison)
+tests/baselines/quick/
+tests/baselines/standard/
+tests/.pytest_cache/
+tests/*/output/
+tests/*/tmp/
+tests/test_outputs/
+data/test_data/test_shap_output/
+
 # Model files (large binaries - optionally uncomment if not tracking)
 # *.pkl
 # *.joblib
 # *.h5
+
+# Planning documents
+PLAN_*.md

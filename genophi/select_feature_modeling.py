@@ -109,8 +109,11 @@ def model_testing_select_MCC(
     """
     start_time = time.time()
 
+    # Set global random seed for full reproducibility
+    np.random.seed(random_state)
+
     # Load and prepare data
-    X, y, full_feature_table = load_and_prepare_data(input, sample_column, phenotype_column, filter_type=set_filter)
+    X, y, full_feature_table = load_and_prepare_data(input, sample_column, phenotype_column, filter_type=set_filter, task_type=task_type)
     X_train, X_test, y_train, y_test, X_test_sample_ids, X_train_sample_ids = filter_data(
         X, y, 
         full_feature_table, 
@@ -282,15 +285,16 @@ def parse_model_predictions_and_performance(model_dir, task_type='classification
         raise ValueError("Invalid task_type. Must be 'classification' or 'regression'.")
 
     # Get all cutoff subdirectories (excluding CSV files)
-    cut_offs = [x for x in os.listdir(model_dir) if '.csv' not in x]
+    cut_offs = sorted([x for x in os.listdir(model_dir) if '.csv' not in x])
 
     # Loop through each cutoff directory and parse run directories
     for cut_off in cut_offs:
         print(f"Parsing cut-off: {cut_off}")
         cut_off_dir = os.path.join(model_dir, cut_off)
-        run_dirs = [x for x in os.listdir(cut_off_dir) if 'run' in x]
+        run_dirs = sorted([x for x in os.listdir(cut_off_dir) if 'run' in x])
 
         # Parse predictions from each run
+        predictions_temp = None
         for run in run_dirs:
             predictions_file = os.path.join(cut_off_dir, run, 'best_model_predictions.csv')
             if os.path.exists(predictions_file):
@@ -300,6 +304,7 @@ def parse_model_predictions_and_performance(model_dir, task_type='classification
                 model_predictions_df = pd.concat([model_predictions_df, predictions_temp])
 
         # Parse top models summary for this cutoff
+        top_models_temp = None
         top_models_file = os.path.join(cut_off_dir, 'top_models_summary.csv')
         if os.path.exists(top_models_file):
             top_models_temp = pd.read_csv(top_models_file)
@@ -311,7 +316,11 @@ def parse_model_predictions_and_performance(model_dir, task_type='classification
             top_models_temp['cut_off'] = cut_off
             model_performance_df = pd.concat([model_performance_df, top_models_temp])
 
-    del predictions_temp, top_models_temp
+    # Clean up temporary variables if they were created
+    if 'predictions_temp' in locals() and predictions_temp is not None:
+        del predictions_temp
+    if 'top_models_temp' in locals() and top_models_temp is not None:
+        del top_models_temp
     gc.collect()
 
     return model_predictions_df, model_performance_df
@@ -547,7 +556,7 @@ def run_experiments(
     """
     start_total_time = time.time()
     if os.path.isdir(input_dir):
-        feature_tables = os.listdir(input_dir)
+        feature_tables = sorted(os.listdir(input_dir))
     else:
         feature_tables = [os.path.basename(input_dir)]
 
@@ -580,6 +589,8 @@ def run_experiments(
                 if not os.path.exists(output_dir):
                     os.makedirs(output_dir)
                 random_state = i
+                # Set global random seeds for full reproducibility
+                np.random.seed(random_state)
 
                 model_performance_path = os.path.join(output_dir, 'model_performance.csv')
                 if not os.path.exists(model_performance_path):
@@ -665,14 +676,22 @@ def run_experiments(
 
     model_metrics_path = os.path.join(base_output_dir, 'model_performance', 'model_performance_metrics.csv')
     if not os.path.exists(model_metrics_path):
-        # Now evaluate model performance and generate performance plots, depending on task type
-        evaluate_model_performance(
-            predictions_file=model_predictions_output,
-            output_dir=base_output_dir,
-            sample_column=sample_column,
-            phenotype_column=phenotype_column,
-            task_type=task_type
-        )
+        # Check if we have any predictions to evaluate (predictions file may be empty if all models failed)
+        try:
+            pred_check_df = pd.read_csv(model_predictions_output)
+            if len(pred_check_df) == 0:
+                logging.warning("No model predictions available. Skipping performance evaluation.")
+            else:
+                # Now evaluate model performance and generate performance plots, depending on task type
+                evaluate_model_performance(
+                    predictions_file=model_predictions_output,
+                    output_dir=base_output_dir,
+                    sample_column=sample_column,
+                    phenotype_column=phenotype_column,
+                    task_type=task_type
+                )
+        except pd.errors.EmptyDataError:
+            logging.warning("No model predictions available. Skipping performance evaluation.")
     else:
         logging.info(f"Model performance metrics already saved to {model_metrics_path}")
 

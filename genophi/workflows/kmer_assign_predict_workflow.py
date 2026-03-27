@@ -6,7 +6,7 @@ from genophi.workflows.prediction_workflow import run_prediction_workflow
 
 def kmer_assign_predict_workflow(input_dir, mmseqs_db, clusters_tsv, feature_map, filtered_kmers, aa_sequence_file,
                             tmp_dir, output_dir, model_dir, feature_table=None, phage_feature_table_path=None, genome_type='strain', 
-                            genome_list=None, sensitivity=7.5, coverage=0.8, min_seq_id=0.6, threads=4, suffix='faa', 
+                            genome_list=None, sensitivity=7.5, coverage=0.8, min_seq_id=0.4, threads=4, suffix='faa', 
                             threshold=0.5, reuse_existing=True):
     """
     Runs the full assignment and prediction workflow in sequence by calling functions from specific modules.
@@ -115,7 +115,7 @@ def main():
     parser.add_argument('--genome_list', type=str, help="Path to file with list of genomes to process.")
     parser.add_argument('--sensitivity', type=float, default=7.5, help="Sensitivity for MMseqs2 search.")
     parser.add_argument('--coverage', type=float, default=0.8, help="Minimum coverage for assignment.")
-    parser.add_argument('--min_seq_id', type=float, default=0.6, help="Minimum sequence identity for assignment.")
+    parser.add_argument('--min_seq_id', type=float, default=0.4, help="Minimum sequence identity for assignment.")
     parser.add_argument('--threads', type=int, default=4, help="Number of threads for MMseqs2.")
     parser.add_argument('--suffix', type=str, default='faa', help="Suffix for FASTA files.")
     parser.add_argument('--threshold', type=float, default=0.5, help="Threshold for kmer matching percentage.")
