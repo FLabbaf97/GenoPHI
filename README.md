@@ -1,5 +1,7 @@
 # GenoPHI
 
+*(jee-no-fee)*
+
 **Genotype-to-Phenotype Phage-Host Interaction Prediction**
 
 GenoPHI is a Python package for machine learning-based prediction of genotype-phenotype relationships using whole-genome sequence data. Originally designed for phage-host interaction prediction, GenoPHI supports both binary interaction prediction and regression tasks for any microbial phenotype. The package implements protein family-based and _k_-mer-based approaches to extract genomic features from amino acid sequences and predict phenotypes using CatBoost gradient boosting models.
@@ -10,7 +12,7 @@ GenoPHI is a Python package for machine learning-based prediction of genotype-ph
 
 ## Workflow Overview
 
-![GenoPHI Workflow](images/workflow_diagram.png)
+![GenoPHI Workflow](https://raw.githubusercontent.com/Noonanav/GenoPHI/main/images/workflow_diagram.png)
 *Figure 1: GenoPHI workflow schematic showing the main analysis pipelines: Protein family-based workflow, _K_-mer-based workflow, and Predictive protein k-mer workflow. Each pathway includes feature extraction, selection, model training, and prediction steps.*
 
 ## Table of Contents
@@ -674,19 +676,19 @@ GenoPHI generates comprehensive visualizations:
 
 Example visualizations from the original README:
 
-![SHAP Summary](images/cutoff_5_shap_beeswarm.png)
+![SHAP Summary](https://raw.githubusercontent.com/Noonanav/GenoPHI/main/images/cutoff_5_shap_beeswarm.png)
 *SHAP feature importance summary*
 
-![ROC Curves](images/roc_curve.png)  
+![ROC Curves](https://raw.githubusercontent.com/Noonanav/GenoPHI/main/images/roc_curve.png)  
 *ROC curves comparing different feature selection cutoffs*
 
-![Precision-Recall](images/pr_curve.png)
+![Precision-Recall](https://raw.githubusercontent.com/Noonanav/GenoPHI/main/images/pr_curve.png)
 *Precision-Recall curves*
 
-![Hit Rate](images/hit_rate_curve.png)
+![Hit Rate](https://raw.githubusercontent.com/Noonanav/GenoPHI/main/images/hit_rate_curve.png)
 *Hit rate analysis*
 
-![Hit Ratio](images/hit_ratio_curve.png)
+![Hit Ratio](https://raw.githubusercontent.com/Noonanav/GenoPHI/main/images/hit_ratio_curve.png)
 *Hit ratio analysis*
 
 ## Output Directory Structure
