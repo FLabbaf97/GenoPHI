@@ -86,6 +86,7 @@ GenoPHI is a Python package for machine learning-based prediction of genotype-ph
 
 **Tested Operating Systems:**
 - Linux (Ubuntu 20.04+, CentOS 7+)
+- macOS (Sonoma 14+, Apple Silicon)
 
 ### Virtual Environment (Recommended)
 
@@ -141,6 +142,37 @@ mmseqs version
 # Run basic help command
 genophi --help
 ```
+
+### Typical Install Time
+
+Full installation (conda environment + GenoPHI + MMseqs2) takes approximately **2-3 minutes** on a standard desktop computer (tested on a MacBook Pro M2, 16 GB RAM, macOS Sonoma 14.3).
+
+## Demo
+
+A small test dataset is included in the repository for demonstrating the software. To run the demo:
+
+```bash
+git clone https://github.com/Noonanav/GenoPHI.git
+cd GenoPHI
+
+genophi protein-family-workflow \
+    --input_path_strain data/test_data/strain_AAs/ \
+    --input_path_phage data/test_data/phage_AAs/ \
+    --phenotype_matrix data/test_data/ecoli_test_interaction_matrix.csv \
+    --output_dir demo_output/ \
+    --threads 4 \
+    --num_features 50 \
+    --num_runs_fs 5 \
+    --num_runs_modeling 10 \
+    --method rfe \
+    --filter_type strain
+```
+
+**Test dataset**: 25 _E. coli_ strains and 25 phages with a binary interaction matrix.
+
+**Expected output**: A `demo_output/` directory containing MMseqs2 clustering results, feature selection outputs, trained models, performance metrics, and a workflow summary report. See [Output Directory Structure](#output-directory-structure) for details.
+
+**Expected run time**: ~25 minutes on a standard desktop computer (MacBook Pro M2, 16 GB RAM).
 
 ## Quick Start
 
