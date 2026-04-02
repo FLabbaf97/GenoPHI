@@ -46,6 +46,7 @@ def detect_and_modify_duplicates(input_dir, output_dir, suffix='faa', strains_to
                     duplicate_found = True
                     logging.warning(f"Duplicate protein ID found: {record.id} in strain {strain_name}")
                     break  # Break to avoid unnecessary processing if duplicate found
+                protein_id_tracker[record.id].add(strain_name)
             
             if duplicate_found:
                 break  # No need to continue checking if a duplicate has been found
