@@ -182,7 +182,7 @@ def construct_feature_table(fasta_file, protein_csv, k, id_col, one_gene, output
     feature_table = feature_table.pivot_table(index=id_col, columns='kmer_id', values='presence', fill_value=0)
 
     # Convert matrix to binary (1 for presence, 0 for absence)
-    feature_table = feature_table.applymap(lambda x: 1 if x > 0 else 0).reset_index()
+    feature_table = (feature_table > 0).astype(int).reset_index()
 
     # Save the presence-absence matrix as a CSV
     feature_table_output = os.path.join(output_dir, f"{output_name}_feature_table.csv")
@@ -230,7 +230,7 @@ def feature_selection_optimized(presence_absence, source, genome_column_name, ou
     presence_absence.set_index(genome_column_name, inplace=True)
 
     # Ensure binary presence-absence format
-    presence_absence = presence_absence.applymap(lambda x: 1 if x > 0 else 0)
+    presence_absence = (presence_absence > 0).astype(int)
 
     # Hash each column to identify identical patterns
     column_hashes = presence_absence.apply(lambda col: hash(tuple(col)), axis=0)

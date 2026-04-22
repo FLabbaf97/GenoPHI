@@ -596,7 +596,7 @@ def feature_selection_optimized(presence_absence, source, genome_column_name):
     presence_absence.set_index(genome_column_name, inplace=True)
 
     # Ensure binary presence-absence format
-    presence_absence = presence_absence.applymap(lambda x: 1 if x > 0 else 0)
+    presence_absence = (presence_absence > 0).astype(int)
 
     # Compute hashes for each column
     logging.info("Hashing columns to identify identical patterns...")
