@@ -2,6 +2,7 @@ import os
 import argparse
 import logging
 import pandas as pd
+from genophi.mmseqs2_clustering import _read_table, _resolve_table_path
 from genophi.feature_annotations import (
     get_predictive_features,
     get_predictive_proteins, 
@@ -109,7 +110,7 @@ def run_predictive_proteins_workflow(
     # Step 6: Generate predictive feature overview (CSV)
     if feature_assignments_path:
         logging.info("Step 6: Generating predictive feature overview CSV.")
-        feature_assignments_df = pd.read_csv(feature_assignments_path)
+        feature_assignments_df = _read_table(_resolve_table_path(feature_assignments_path))
         output_predictive_feature_overview(
             predictive_proteins=predictive_proteins,
             feature_assignments_df=feature_assignments_df,

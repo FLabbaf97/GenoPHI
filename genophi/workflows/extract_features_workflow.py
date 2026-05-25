@@ -4,7 +4,7 @@ import argparse
 import logging
 import time
 import psutil
-from genophi.mmseqs2_clustering import run_clustering_workflow, run_feature_assignment
+from genophi.mmseqs2_clustering import run_clustering_workflow, run_feature_assignment, _read_table, _resolve_table_path
 
 def setup_logging(output_dir, log_filename="extract_features_workflow.log"):
     """
@@ -145,11 +145,11 @@ def extract_features_workflow(
                 os.makedirs(os.path.dirname(tmp_output_dir), exist_ok=True)
                 os.symlink(old_tmp_dir, tmp_output_dir, target_is_directory=True)
             
-            features_path = os.path.join(output_dir, "features", "feature_table.csv")
+            features_path = os.path.join(output_dir, "features", "feature_table.pq")
             
-        elif os.path.exists(os.path.join(output_dir, "features", "feature_table.csv")):
+        elif os.path.exists(os.path.join(output_dir, "features", "feature_table.pq")) or os.path.exists(os.path.join(output_dir, "features", "feature_table.csv")):
             logging.info(f"Using existing {source} clustering results...")
-            features_path = os.path.join(output_dir, "features", "feature_table.csv")
+            features_path = _resolve_table_path(os.path.join(output_dir, "features", "feature_table.pq"))
             
         else:
             # Run normal clustering workflow
@@ -171,12 +171,13 @@ def extract_features_workflow(
                 clear_tmp
             )
             
-            features_path = os.path.join(output_dir, "features", "feature_table.csv")
+            features_path = os.path.join(output_dir, "features", "feature_table.pq")
         
         # Run feature assignment if feature table doesn't exist
-        if not os.path.exists(features_path):
+        features_path_resolved = _resolve_table_path(features_path)
+        if not os.path.exists(features_path_resolved):
             logging.info(f"Step 2: Running feature assignment for {source} genomes...")
-            presence_absence_matrix = os.path.join(output_dir, "presence_absence_matrix.csv")
+            presence_absence_matrix = _resolve_table_path(os.path.join(output_dir, "presence_absence_matrix.pq"))
             
             if not os.path.exists(presence_absence_matrix):
                 raise FileNotFoundError(f"Presence-absence matrix not found at {presence_absence_matrix}")
@@ -192,22 +193,23 @@ def extract_features_workflow(
             )
         
         # Count genomes and protein families
-        presence_absence_matrix = os.path.join(output_dir, "presence_absence_matrix.csv")
+        presence_absence_matrix = _resolve_table_path(os.path.join(output_dir, "presence_absence_matrix.pq"))
         if os.path.exists(presence_absence_matrix):
-            matrix_df = pd.read_csv(presence_absence_matrix)
+            matrix_df = _read_table(presence_absence_matrix)
             input_genomes = len(matrix_df['Genome'].unique())
             protein_families = len(matrix_df.columns) - 1  # Exclude 'Genome' column
         
         # Count features
-        if os.path.exists(features_path):
-            features_df = pd.read_csv(features_path)
+        features_path_resolved = _resolve_table_path(features_path)
+        if os.path.exists(features_path_resolved):
+            features_df = _read_table(features_path_resolved)
             features = len(features_df.columns) - 2  # Exclude genome column and feature column
         
         logging.info(f"Feature extraction completed!")
         logging.info(f"  - Input genomes: {input_genomes}")
         logging.info(f"  - Protein families: {protein_families}")
         logging.info(f"  - Features: {features}")
-        logging.info(f"  - Feature table saved to: {features_path}")
+        logging.info(f"  - Feature table saved to: {features_path_resolved}")
         
     except Exception as e:
         logging.error(f"An error occurred: {e}")

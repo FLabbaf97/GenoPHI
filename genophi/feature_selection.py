@@ -35,10 +35,11 @@ def load_and_prepare_data(input_path, sample_column=None, phenotype_column=None,
     """
     from genophi.utils import validate_phenotype_task_type
 
-    if not os.path.exists(input_path):
+    from genophi.mmseqs2_clustering import _read_table, _resolve_table_path
+    resolved = _resolve_table_path(input_path)
+    if not os.path.exists(resolved):
         raise FileNotFoundError(f"The input file {input_path} does not exist.")
-
-    full_feature_table = pd.read_csv(input_path)
+    full_feature_table = _read_table(resolved)
     if full_feature_table.empty:
         raise ValueError("Input data is empty.")
 
@@ -1593,7 +1594,8 @@ def generate_feature_tables(
     if phenotype_column is None:
         phenotype_column = 'interaction'
 
-    full_feature_table = pd.read_csv(full_feature_table_file)
+    from genophi.mmseqs2_clustering import _read_table, _resolve_table_path
+    full_feature_table = _read_table(_resolve_table_path(full_feature_table_file))
     interaction_count = full_feature_table.shape[0]
     print('Interaction count:', interaction_count)
 

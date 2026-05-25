@@ -142,6 +142,11 @@ def get_predictive_features(feature_file_path, sample_column='strain', phenotype
 
     return predictive_features
 
+def _read_table_file(filepath):
+    """Read DataFrame from parquet or CSV."""
+    from genophi.mmseqs2_clustering import _read_table, _resolve_table_path
+    return _read_table(_resolve_table_path(filepath))
+
 def get_predictive_proteins(select_features, feature2cluster_path, cluster2protein_path):
     """
     Retrieves predictive proteins based on selected features from the feature and cluster mappings.
@@ -156,9 +161,12 @@ def get_predictive_proteins(select_features, feature2cluster_path, cluster2prote
     """
     logging.info("Loading predictive proteins based on selected features.")
 
-    # Load mappings
-    feature2cluster_df = pd.read_csv(feature2cluster_path)
-    feature2cluster_df.columns = ['Feature', 'cluster']
+    # Load mappings (feature2cluster can be parquet or CSV)
+    feature2cluster_df = _read_table_file(feature2cluster_path)
+    if 'Cluster_Label' in feature2cluster_df.columns:
+        feature2cluster_df = feature2cluster_df.rename(columns={'Cluster_Label': 'cluster'})
+    elif 'cluster' not in feature2cluster_df.columns:
+        feature2cluster_df.columns = ['Feature', 'cluster']
     cluster2protein_df = pd.read_csv(cluster2protein_path, sep='\t', names=['cluster', 'protein_ID'])
 
     # Ensure compatibility between protein IDs in the cluster file

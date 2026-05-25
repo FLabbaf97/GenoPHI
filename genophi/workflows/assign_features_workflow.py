@@ -10,7 +10,7 @@ import warnings
 # Suppress DataFrame fragmentation warning
 warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
 
-from genophi.mmseqs2_clustering import create_mmseqs_database, load_strains, create_contig_to_genome_dict, select_best_hits_streaming
+from genophi.mmseqs2_clustering import create_mmseqs_database, load_strains, create_contig_to_genome_dict, select_best_hits_streaming, _read_table, _write_parquet, _resolve_table_path
 
 def detect_and_modify_duplicates(input_dir, output_dir, suffix='faa', strains_to_process=None, duplicate_all=False):
     """
@@ -140,7 +140,8 @@ def map_features(best_hits_tsv, feature_map, genome_contig_mapping, genome_type)
 
     try:
         best_hits_df = pd.read_csv(best_hits_tsv, sep='\t', header=None, names=['Query', 'Cluster'])
-        feature_mapping = pd.read_csv(feature_map)
+        feature_map_resolved = _resolve_table_path(feature_map)
+        feature_mapping = _read_table(feature_map_resolved)
         
         best_hits_df['Cluster'] = best_hits_df['Cluster'].astype(str)
         feature_mapping['Cluster_Label'] = feature_mapping['Cluster_Label'].astype(str)
@@ -222,8 +223,8 @@ def run_assign_features_workflow(input_dir, mmseqs_db, tmp_dir, output_dir, feat
     feature_presence = map_features(best_hits_tsv, feature_map, genome_contig_mapping, genome_type)
 
     if feature_presence is not None:
-        combined_feature_table_path = os.path.join(output_dir, f'{genome_type}_combined_feature_table.csv')
-        feature_presence.to_csv(combined_feature_table_path, index=False)
+        combined_feature_table_path = os.path.join(output_dir, f'{genome_type}_combined_feature_table.pq')
+        _write_parquet(feature_presence, combined_feature_table_path)
         logging.info(f"Combined feature table saved to {combined_feature_table_path}")
 
 def main():
@@ -231,7 +232,7 @@ def main():
     parser.add_argument('--input_dir', type=str, required=True, help="Directory containing genome FASTA files.")
     parser.add_argument('--mmseqs_db', type=str, required=True, help="Path to the existing MMseqs2 database.")
     parser.add_argument('--clusters_tsv', type=str, required=True, help="Path to the clusters TSV file.")
-    parser.add_argument('--feature_map', type=str, required=True, help="Path to the feature map (selected_features.csv).")
+    parser.add_argument('--feature_map', type=str, required=True, help="Path to the feature map (selected_features.pq or selected_features.csv).")
     parser.add_argument('--output_dir', type=str, required=True, help="Directory to save results.")
     parser.add_argument('--tmp_dir', type=str, required=True, help="Temporary directory for intermediate files.")
     parser.add_argument('--genome_type', type=str, choices=['strain', 'phage'], default='strain', help="Type of genome to process.")

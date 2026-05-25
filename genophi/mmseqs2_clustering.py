@@ -20,6 +20,20 @@ os.environ['NUMBA_NUM_THREADS'] = '12'
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+# Parquet file extension for large dataframes
+PARQUET_EXT = ".pq"
+
+def _read_table(filepath):
+    """Read a DataFrame from parquet (.pq) or CSV, preferring parquet."""
+    if filepath.endswith(PARQUET_EXT) or filepath.endswith('.parquet'):
+        return pd.read_parquet(filepath)
+    return pd.read_csv(filepath)
+
+def _write_parquet(df, filepath):
+    """Write a DataFrame to parquet format."""
+    df.to_parquet(filepath, index=False)
+    return filepath
+
 # Utility Functions
 def load_strains(strain_list, strain_column):
     """
@@ -201,22 +215,25 @@ def validate_checkpoint_file(filepath, min_size=1, file_type='general'):
             return False
         return True
     
-    elif file_type in ['tsv', 'csv']:
+    elif file_type in ['tsv', 'csv', 'parquet']:
         # Basic structure validation for tabular files
         try:
-            delimiter = '\t' if file_type == 'tsv' else ','
-            # Just read first few lines to check structure
-            with open(filepath, 'r') as f:
-                first_line = f.readline().strip()
-                if not first_line:
-                    logging.warning(f"File {filepath} appears to be empty")
+            if file_type == 'parquet':
+                df = pd.read_parquet(filepath)
+                if df.empty or len(df.columns) < 2:
+                    logging.warning(f"File {filepath} doesn't appear to be properly parquet formatted")
                     return False
-                
-                # Check if it's properly delimited
-                parts = first_line.split(delimiter)
-                if len(parts) < 2:
-                    logging.warning(f"File {filepath} doesn't appear to be properly {file_type} formatted")
-                    return False
+            else:
+                delimiter = '\t' if file_type == 'tsv' else ','
+                with open(filepath, 'r') as f:
+                    first_line = f.readline().strip()
+                    if not first_line:
+                        logging.warning(f"File {filepath} appears to be empty")
+                        return False
+                    parts = first_line.split(delimiter)
+                    if len(parts) < 2:
+                        logging.warning(f"File {filepath} doesn't appear to be properly {file_type} formatted")
+                        return False
             return True
         except Exception as e:
             logging.warning(f"Error validating {filepath}: {e}")
@@ -263,6 +280,7 @@ def cleanup_partial_results(output_dir, tmp_dir, stage):
         elif stage == 'matrix':
             # Remove matrix output but keep assignment results
             files_to_remove = [
+                os.path.join(output_dir, "presence_absence_matrix.pq"),
                 os.path.join(output_dir, "presence_absence_matrix.csv"),
             ]
             
@@ -378,8 +396,10 @@ def assign_sequences_to_clusters(db_name, output_dir, tmp_dir, coverage, min_seq
         return best_hits_tsv
         
     if validate_checkpoint_file(assigned_tsv, file_type='tsv'):
-        logging.info("Found existing assigned_clusters.tsv, processing to best hits") 
-        select_best_hits(assigned_tsv, best_hits_tsv, clusters_tsv)
+        file_size_gb = os.path.getsize(assigned_tsv) / (1024 ** 3)
+        logging.info(f"Found existing assigned_clusters.tsv ({file_size_gb:.2f} GB), resuming from checkpoint and processing to best hits") 
+        select_best_hits_streaming(assigned_tsv, best_hits_tsv, clusters_tsv)
+        logging.info("Successfully created best_hits.tsv from existing assigned_clusters.tsv")
         return best_hits_tsv
     
     result_db = os.path.join(tmp_dir, "result_db")
@@ -397,7 +417,7 @@ def assign_sequences_to_clusters(db_name, output_dir, tmp_dir, coverage, min_seq
     logging.info(f"Assigned clusters TSV saved to {assigned_tsv}")
     
     best_hits_tsv = os.path.join(output_dir, "best_hits.tsv")
-    select_best_hits(assigned_tsv, best_hits_tsv, clusters_tsv)
+    select_best_hits_streaming(assigned_tsv, best_hits_tsv, clusters_tsv)
 
     # Delete the intermediate clustering files
     if clear_tmp:
@@ -466,13 +486,92 @@ def select_best_hits(assigned_tsv, best_hits_tsv, clusters_tsv):
     best_hits_df[['Query', 'Cluster']].to_csv(best_hits_tsv, sep='\t', index=False, header=False)
     logging.info(f"Best hits saved to {best_hits_tsv}")
 
-def generate_presence_absence_matrix(best_hits_tsv, output_csv_path, contig_to_genome, genome_list):
+import pandas as pd
+import logging
+
+def select_best_hits_streaming(assigned_tsv, best_hits_tsv, clusters_tsv, chunksize=5_000_000):
+    logging.info("Selecting best hits (streaming)...")
+
+    cols = [
+        'Query', 'Target', 'Score', 'SeqIdentity', 'Evalue',
+        'qStart', 'qEnd', 'qLen', 'tStart', 'tEnd', 'tLen'
+    ]
+
+    dtypes = {
+        'Query': 'string',
+        'Target': 'string',
+        'Score': 'float32',
+        'SeqIdentity': 'float32',
+        'Evalue': 'float32',
+    }
+
+    best = {}  # Query -> (SeqIdentity, Evalue, Target)
+
+    reader = pd.read_csv(
+        assigned_tsv,
+        sep='\t',
+        header=None,
+        names=cols,
+        dtype=dtypes,
+        usecols=['Query', 'Target', 'SeqIdentity', 'Evalue'],
+        chunksize=chunksize
+    )
+
+    for chunk in reader:
+        # best per Query in chunk
+        chunk = (
+            chunk.sort_values(['Query', 'SeqIdentity', 'Evalue'],
+                              ascending=[True, False, True])
+                 .drop_duplicates('Query', keep='first')
+        )
+
+        for q, t, si, ev in zip(
+            chunk['Query'],
+            chunk['Target'],
+            chunk['SeqIdentity'],
+            chunk['Evalue']
+        ):
+            if q not in best or (si > best[q][0]) or (si == best[q][0] and ev < best[q][1]):
+                best[q] = (si, ev, t)
+
+    # Convert to DataFrame
+    best_df = pd.DataFrame(
+        [(q, v[2]) for q, v in best.items()],
+        columns=['Query', 'Target']
+    )
+
+    # Load clusters (small)
+    clusters_df = pd.read_csv(
+        clusters_tsv,
+        sep='\t',
+        header=None,
+        names=['Cluster', 'Contig'],
+        dtype='string'
+    )
+
+    result = best_df.merge(
+        clusters_df,
+        left_on='Target',
+        right_on='Contig',
+        how='left'
+    )
+
+    result[['Query', 'Cluster']].to_csv(
+        best_hits_tsv,
+        sep='\t',
+        index=False,
+        header=False
+    )
+
+    logging.info("Done.")
+
+def generate_presence_absence_matrix(best_hits_tsv, output_path, contig_to_genome, genome_list):
     """
     Generates a presence-absence matrix based on best hits and cluster assignments.
 
     Args:
         best_hits_tsv (str): Path to the best hits TSV file.
-        output_csv_path (str): Path to save the presence-absence matrix.
+        output_path (str): Path to save the presence-absence matrix (parquet format).
         contig_to_genome (dict): Dictionary mapping contigs to genomes.
         genome_list (list): List of genome names.
     """
@@ -502,8 +601,8 @@ def generate_presence_absence_matrix(best_hits_tsv, output_csv_path, contig_to_g
     cluster_columns = sorted([col for col in presence_absence_df.columns if col != 'Genome'])
     presence_absence_df = presence_absence_df[['Genome'] + cluster_columns]
 
-    presence_absence_df.to_csv(output_csv_path, index=False)
-    logging.info(f"Presence-absence matrix saved to {output_csv_path}")
+    _write_parquet(presence_absence_df, output_path)
+    logging.info(f"Presence-absence matrix saved to {output_path}")
 
 def compare_cluster_and_search_results(clusters_tsv, best_hits_tsv, output_dir):
     """
@@ -688,13 +787,17 @@ def run_clustering_workflow(input_path, output_dir, tmp_dir="tmp", min_seq_id=0.
     os.makedirs(tmp_dir, exist_ok=True)
     
     # Define paths
-    presence_absence_csv = os.path.join(output_dir, "presence_absence_matrix.csv")
+    presence_absence_path = os.path.join(output_dir, "presence_absence_matrix.pq")
     clusters_tsv = os.path.join(output_dir, "clusters.tsv")
     best_hits_tsv = os.path.join(output_dir, "best_hits.tsv")
     db_name = os.path.join(tmp_dir, "mmseqs_db")
     
-    # Quick exit if final output exists
-    if not force_restart and validate_checkpoint_file(presence_absence_csv, file_type='csv'):
+    # Quick exit if final output exists (check both parquet and legacy csv)
+    presence_absence_csv = os.path.join(output_dir, "presence_absence_matrix.csv")
+    if not force_restart and (
+        validate_checkpoint_file(presence_absence_path, file_type='parquet') or
+        validate_checkpoint_file(presence_absence_csv, file_type='csv')
+    ):
         logging.info("Found complete presence-absence matrix. Skipping entire workflow.")
         if compare:
             compare_cluster_and_search_results(clusters_tsv, best_hits_tsv, output_dir)
@@ -776,13 +879,20 @@ def run_clustering_workflow(input_path, output_dir, tmp_dir="tmp", min_seq_id=0.
         best_hits_tsv = assign_sequences_to_clusters(db_name, output_dir, tmp_dir, coverage, min_seq_id, sensitivity, threads, clusters_tsv, clear_tmp)
 
     # Stage 4: Matrix generation (only if not already valid)
-    if not validate_checkpoint_file(presence_absence_csv, file_type='csv'):
-        generate_presence_absence_matrix(best_hits_tsv, presence_absence_csv, contig_to_genome, genome_list)
+    if not validate_checkpoint_file(presence_absence_path, file_type='parquet') and not validate_checkpoint_file(presence_absence_csv, file_type='csv'):
+        generate_presence_absence_matrix(best_hits_tsv, presence_absence_path, contig_to_genome, genome_list)
     else:
         logging.info("Reusing existing presence-absence matrix")
 
     if compare:
         compare_cluster_and_search_results(clusters_tsv, best_hits_tsv, output_dir)
+
+def _resolve_table_path(base_path):
+    """Resolve path to existing table file, trying parquet (.pq) first then csv."""
+    if os.path.exists(base_path):
+        return base_path
+    alt = base_path.replace('.csv', PARQUET_EXT) if base_path.endswith('.csv') else base_path.replace(PARQUET_EXT, '.csv')
+    return alt if os.path.exists(alt) else base_path
 
 def run_feature_assignment(input_file, output_dir, source='strain', select='none', select_column='strain', input_type='directory', max_ram=8, threads=4):
     """
@@ -792,7 +902,7 @@ def run_feature_assignment(input_file, output_dir, source='strain', select='none
     and outputs both feature assignments and a feature table. It allows for optional filtering based on a strain list.
     
     Args:
-        input_file (str): Path to the presence-absence matrix CSV file.
+        input_file (str): Path to the presence-absence matrix (parquet .pq or CSV file).
         output_dir (str): Directory to save the results (selected features, assignments, and feature table).
         source (str): Prefix for naming the selected features (e.g., 'strain' or 'phage').
         select (str): Path to a strain list file for filtering, or 'none' to skip filtering.
@@ -804,8 +914,11 @@ def run_feature_assignment(input_file, output_dir, source='strain', select='none
     """
     os.makedirs(output_dir, exist_ok=True)
 
-    # Load the presence-absence matrix
-    presence_absence = pd.read_csv(input_file)
+    # Load the presence-absence matrix (supports both parquet and CSV)
+    resolved_path = _resolve_table_path(input_file)
+    if not os.path.exists(resolved_path):
+        raise FileNotFoundError(f"Presence-absence matrix not found at {input_file} (tried .pq and .csv)")
+    presence_absence = _read_table(resolved_path)
 
     # Convert 'none' to None for filtering purposes
     select_value = None if select == 'none' else select
@@ -835,13 +948,13 @@ def run_feature_assignment(input_file, output_dir, source='strain', select='none
     # Pass the correct genome column name to feature_selection_optimized
     selected_features = feature_selection_optimized(presence_absence, source, genome_column_name)
 
-    # Save the selected features and feature assignments
-    selected_features_path = os.path.join(output_dir, 'selected_features.csv')
-    selected_features.to_csv(selected_features_path, index=False)
+    # Save the selected features and feature assignments (parquet for large tables)
+    selected_features_path = os.path.join(output_dir, 'selected_features.pq')
+    _write_parquet(selected_features, selected_features_path)
 
     feature_assignments, feature_table = feature_assignment(genome_assignments, selected_features, genome_column_name)
-    feature_assignments.to_csv(os.path.join(output_dir, 'feature_assignments.csv'), index=False)
-    feature_table.to_csv(os.path.join(output_dir, 'feature_table.csv'), index=False)
+    _write_parquet(feature_assignments, os.path.join(output_dir, 'feature_assignments.pq'))
+    _write_parquet(feature_table, os.path.join(output_dir, 'feature_table.pq'))
 
 def cluster_and_filter_features(
     feature_table,
@@ -956,11 +1069,12 @@ def merge_feature_tables(
     """
     logging.info('Starting to merge feature tables')
 
-    # Helper function to read CSV with optional renaming
-    def read_csv_with_check(filepath, rename_col=None, new_col=None):
+    # Helper function to read table (parquet or CSV) with optional renaming
+    def read_table_with_check(filepath, rename_col=None, new_col=None):
         try:
-            logging.info(f'Reading file: {filepath}')
-            df = pd.read_csv(filepath)
+            resolved = _resolve_table_path(filepath)
+            logging.info(f'Reading file: {resolved}')
+            df = _read_table(resolved)
             if rename_col and rename_col in df.columns:
                 df.rename(columns={rename_col: new_col}, inplace=True)
                 logging.info(f'Renamed column {rename_col} to {new_col} in {filepath}')
@@ -970,7 +1084,7 @@ def merge_feature_tables(
             raise
 
     # Load strain features
-    strain_features_df = read_csv_with_check(strain_features, rename_col='Genome', new_col=sample_column)
+    strain_features_df = read_table_with_check(strain_features, rename_col='Genome', new_col=sample_column)
     strain_features_df = strain_features_df.astype({col: 'uint8' for col in strain_features_df.columns if col.startswith(('sc_', 'pc_'))})
 
     if remove_suffix:
@@ -980,8 +1094,8 @@ def merge_feature_tables(
     # Check if strain features table has actual features
     strain_has_features = len(strain_features_df.columns) > 1 and len(strain_features_df) > 0
     
-    # Load phenotype matrix
-    phenotype_matrix_df = read_csv_with_check(phenotype_matrix)
+    # Load phenotype matrix (user-provided, typically CSV)
+    phenotype_matrix_df = read_table_with_check(phenotype_matrix)
     phenotype_matrix_df[sample_column] = phenotype_matrix_df[sample_column].astype(str)
 
     # Filter phenotype matrix to only essential columns if phenotype_column is specified
@@ -1000,7 +1114,7 @@ def merge_feature_tables(
 
     if phage_features:
         # If phage features are provided, merge strain, phage, and phenotype matrices
-        phage_features_df = read_csv_with_check(phage_features, rename_col='Genome', new_col='phage')
+        phage_features_df = read_table_with_check(phage_features, rename_col='Genome', new_col='phage')
         phage_features_df = phage_features_df.astype({col: 'uint8' for col in phage_features_df.columns if col.startswith(('sc_', 'pc_'))})
         
         # Check if phage features table has actual features
@@ -1078,12 +1192,12 @@ def merge_feature_tables(
                 output_dir=output_dir
             )
 
-    # Determine output filename
-    output_filename = f"{output_file}_full_feature_table.csv" if output_file else "full_feature_table.csv"
+    # Determine output filename (parquet for efficiency)
+    output_filename = f"{output_file}_full_feature_table.pq" if output_file else "full_feature_table.pq"
     feature_table_path = os.path.join(output_dir, output_filename)
 
     try:
-        feature_table.to_csv(feature_table_path, index=False)
+        _write_parquet(feature_table, feature_table_path)
         logging.info(f'Successfully saved merged feature table to {feature_table_path}')
     except Exception as e:
         logging.error(f'Error saving merged feature table: {e}')
