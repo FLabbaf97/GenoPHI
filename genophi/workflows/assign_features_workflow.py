@@ -10,7 +10,7 @@ import warnings
 # Suppress DataFrame fragmentation warning
 warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
 
-from genophi.mmseqs2_clustering import create_mmseqs_database, load_strains, create_contig_to_genome_dict, select_best_hits
+from genophi.mmseqs2_clustering import create_mmseqs_database, load_strains, create_contig_to_genome_dict, select_best_hits_streaming
 
 def detect_and_modify_duplicates(input_dir, output_dir, suffix='faa', strains_to_process=None, duplicate_all=False):
     """
@@ -109,7 +109,7 @@ def assign_sequences_to_clusters(db_name, target_db, output_dir, tmp_dir, covera
     logging.info(f"Assigned clusters TSV saved to {assigned_tsv}")
     
     best_hits_tsv = os.path.join(output_dir, "best_hits.tsv")
-    select_best_hits(assigned_tsv, best_hits_tsv, clusters_tsv)
+    select_best_hits_streaming(assigned_tsv, best_hits_tsv, clusters_tsv)
 
     # Delete the intermediate clustering files
     if clear_tmp:
@@ -214,7 +214,7 @@ def run_assign_features_workflow(input_dir, mmseqs_db, tmp_dir, output_dir, feat
 
     assigned_tsv = os.path.join(tmp_dir, 'assigned_clusters.tsv')
     best_hits_tsv = os.path.join(tmp_dir, 'best_hits.tsv')
-    select_best_hits(assigned_tsv, best_hits_tsv, clusters_tsv)
+    select_best_hits_streaming(assigned_tsv, best_hits_tsv, clusters_tsv)
 
     genome_contig_mapping, _ = create_contig_to_genome_dict(fasta_files, 'directory')
 
