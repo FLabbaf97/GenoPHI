@@ -7,6 +7,11 @@ from Bio import SeqIO
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+def _read_table_file(filepath):
+    """Read DataFrame from parquet or CSV."""
+    from genophi.mmseqs2_clustering import _read_table, _resolve_table_path
+    return _read_table(_resolve_table_path(filepath))
+
 def load_annotation_table(annotation_table_path):
     """
     Loads an annotation table, automatically detecting whether it is CSV or TSV based on its extension or content.
@@ -47,8 +52,8 @@ def get_predictive_features(feature_file_path, sample_column='strain', phenotype
     Returns:
         predictive_features (list): A list of predictive feature names excluding the sample and phenotype columns.
     """
-    # Load the feature table
-    feature_df = pd.read_csv(feature_file_path)
+    # Load the feature table (CSV or parquet)
+    feature_df = _read_table_file(feature_file_path)
 
     # Identify predictive feature groups
     # Only consider columns that match cluster naming pattern: <single_char>c_<number>
@@ -141,11 +146,6 @@ def get_predictive_features(feature_file_path, sample_column='strain', phenotype
     logging.info(f"Loaded {len(phage_features)} predictive phage features.")
 
     return predictive_features
-
-def _read_table_file(filepath):
-    """Read DataFrame from parquet or CSV."""
-    from genophi.mmseqs2_clustering import _read_table, _resolve_table_path
-    return _read_table(_resolve_table_path(filepath))
 
 def get_predictive_proteins(select_features, feature2cluster_path, cluster2protein_path):
     """

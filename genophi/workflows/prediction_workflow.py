@@ -5,6 +5,7 @@ from catboost import CatBoostClassifier
 from argparse import ArgumentParser
 import numpy as np
 import logging
+from genophi.mmseqs2_clustering import _read_table, _resolve_table_path
 
 def generate_full_feature_table(input_table, phage_feature_table=None, strain_source='strain', phage_source='phage', output_dir=None):
     strain_features = [strain_source] + [col for col in input_table.columns if col not in [strain_source, phage_source]]
@@ -170,9 +171,12 @@ def run_prediction_workflow(input_dir, phage_feature_table_path, model_dir, outp
     """
     os.makedirs(output_dir, exist_ok=True)
 
-    phage_feature_table = pd.read_csv(phage_feature_table_path) if phage_feature_table_path else None
+    phage_feature_table = _read_table(_resolve_table_path(phage_feature_table_path)) if phage_feature_table_path else None
 
-    input_files = [f for f in os.listdir(input_dir) if f.endswith('_feature_table.csv')]
+    input_files = [
+        f for f in os.listdir(input_dir)
+        if f.endswith('_feature_table.csv') or f.endswith('_feature_table.pq') or f.endswith('_feature_table.parquet')
+    ]
     if not input_files:
         logging.error(f"No strain feature table found in {input_dir}")
         return  # or raise an exception
@@ -180,7 +184,7 @@ def run_prediction_workflow(input_dir, phage_feature_table_path, model_dir, outp
 
     logging.info(f'Processing file: {input_file}')
 
-    input_table = pd.read_csv(os.path.join(input_dir, input_file))
+    input_table = _read_table(_resolve_table_path(os.path.join(input_dir, input_file)))
 
     single_strain_mode = phage_feature_table is None
 
@@ -195,7 +199,7 @@ def run_prediction_workflow(input_dir, phage_feature_table_path, model_dir, outp
 
     if feature_table:
         logging.info(f'Loading feature table from {feature_table}')
-        feature_table = pd.read_csv(feature_table)
+        feature_table = _read_table(_resolve_table_path(feature_table))
 
         select_columns = feature_table.columns
         select_columns = [col for col in select_columns if col != 'interaction']

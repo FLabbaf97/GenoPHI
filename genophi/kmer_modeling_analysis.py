@@ -12,7 +12,12 @@ from plotnine import *
 from scipy.cluster.hierarchy import linkage, leaves_list
 from scipy.spatial.distance import pdist
 
+from genophi.mmseqs2_clustering import _read_table, _resolve_table_path, _write_table
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+
+def _read_kmer_analysis_table(filepath):
+    return _read_table(_resolve_table_path(filepath))
 
 # ==========================
 # 1. DATA LOADING
@@ -46,7 +51,7 @@ def aggregate_shap_values(model_output_dir):
 
 def get_predictive_kmers(feature_file_path, feature2cluster_path, feature_type, ignore_families=False):
     logging.info(f"Extracting predictive features of type '{feature_type}'")
-    feature_df = pd.read_csv(feature_file_path)
+    feature_df = _read_kmer_analysis_table(feature_file_path)
     
     feature_prefix = feature_type[0] + 'c_' 
     select_features = [col for col in feature_df.columns if feature_prefix in col]
@@ -55,7 +60,7 @@ def get_predictive_kmers(feature_file_path, feature2cluster_path, feature_type, 
         logging.warning(f"No predictive {feature_type} features found.")
         return pd.DataFrame(columns=['cluster', 'kmer', 'protein_family', 'Feature'])
 
-    feature2cluster_df = pd.read_csv(feature2cluster_path)
+    feature2cluster_df = _read_kmer_analysis_table(feature2cluster_path)
     feature2cluster_df.rename(columns={'Cluster_Label': 'cluster'}, inplace=True)
     
     filtered_kmers = feature2cluster_df[feature2cluster_df['Feature'].isin(select_features)].copy()
@@ -87,7 +92,7 @@ def merge_kmers_with_families(protein_families_file, aa_sequences_df, feature_ty
             logging.error("Protein families file is missing!")
             return pd.DataFrame()
 
-        protein_families_df = pd.read_csv(protein_families_file)
+        protein_families_df = _read_kmer_analysis_table(protein_families_file)
         protein_families_df = protein_families_df[[feature_type, 'cluster', 'protein_ID']].drop_duplicates()
         protein_families_df.rename(columns={'cluster': 'protein_family'}, inplace=True)
         

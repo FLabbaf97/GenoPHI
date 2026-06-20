@@ -88,7 +88,7 @@ def run_full_feature_workflow(
         strain_output_dir = os.path.join(output_dir, "strain")
         run_clustering_workflow(input_path_strain, strain_output_dir, strain_tmp_dir, min_seq_id, coverage, sensitivity, suffix, threads, strain_list or 'none', strain_column, compare)
 
-        presence_absence_strain = os.path.join(strain_output_dir, "presence_absence_matrix.pq")
+        presence_absence_strain = os.path.join(strain_output_dir, "presence_absence_matrix.csv")
         feature_output_dir_strain = os.path.join(strain_output_dir, "features")
 
         logging.info("Running feature assignment workflow for strain genomes...")
@@ -103,7 +103,7 @@ def run_full_feature_workflow(
         )
 
         # Count genomes and protein families for strain
-        strain_matrix = _resolve_table_path(os.path.join(strain_output_dir, "presence_absence_matrix.pq"))
+        strain_matrix = _resolve_table_path(os.path.join(strain_output_dir, "presence_absence_matrix.csv"))
         strain_df = _read_table(strain_matrix)
         input_genomes += len(strain_df['Genome'].unique())
         protein_families += len(strain_df.columns) - 1  # Exclude 'Genome'
@@ -117,7 +117,7 @@ def run_full_feature_workflow(
 
             run_clustering_workflow(input_path_phage, phage_output_dir, phage_tmp_dir, min_seq_id, coverage, sensitivity, suffix, threads, phage_list or 'none', phage_column, compare)
 
-            presence_absence_phage = os.path.join(phage_output_dir, "presence_absence_matrix.pq")
+            presence_absence_phage = os.path.join(phage_output_dir, "presence_absence_matrix.csv")
             feature_output_dir_phage = os.path.join(phage_output_dir, "features")
 
             logging.info("Running feature assignment workflow for phage genomes...")
@@ -133,8 +133,8 @@ def run_full_feature_workflow(
 
             # Merge strain and phage feature tables
             logging.info("Merging feature tables for strain and phage genomes...")
-            strain_features = os.path.join(feature_output_dir_strain, "feature_table.pq")
-            phage_features = os.path.join(feature_output_dir_phage, "feature_table.pq")
+            strain_features = os.path.join(feature_output_dir_strain, "feature_table.csv")
+            phage_features = os.path.join(feature_output_dir_phage, "feature_table.csv")
 
             merged_output_dir = os.path.join(output_dir, "merged")
             os.makedirs(merged_output_dir, exist_ok=True)
@@ -155,7 +155,7 @@ def run_full_feature_workflow(
         else:
             # Only strain data: merge with phenotype_matrix
             logging.info("Merging strain features with the phenotype matrix...")
-            strain_features = os.path.join(feature_output_dir_strain, "feature_table.pq")
+            strain_features = os.path.join(feature_output_dir_strain, "feature_table.csv")
 
             merge_feature_tables(
                 strain_features=strain_features,
@@ -171,7 +171,7 @@ def run_full_feature_workflow(
             logging.info(f"Strain feature table merged with phenotype matrix and saved at: {output_dir}")
 
         # Track final output genomes and features
-        final_table = _resolve_table_path(os.path.join(output_dir, "full_feature_table.pq"))
+        final_table = _resolve_table_path(os.path.join(output_dir, "full_feature_table.csv"))
         final_df = _read_table(final_table)
         output_genomes = len(final_df[strain_column].unique())
         features = len(final_df.columns) - 1  # Exclude strain_column

@@ -1,6 +1,7 @@
 import os
 import logging
 from argparse import ArgumentParser
+from genophi.mmseqs2_clustering import _resolve_table_path
 from genophi.workflows.kmer_assign_features_workflow import run_kmer_assign_features_workflow
 from genophi.workflows.prediction_workflow import run_prediction_workflow
 
@@ -44,7 +45,7 @@ def kmer_assign_predict_workflow(input_dir, mmseqs_db, clusters_tsv, feature_map
     strain_feature_table_path = os.path.join(assign_output_dir, f'{genome_type}_combined_feature_table.csv')
     
     # Check if we can skip assignment
-    assignment_needed = not (reuse_existing and os.path.exists(strain_feature_table_path))
+    assignment_needed = not (reuse_existing and os.path.exists(_resolve_table_path(strain_feature_table_path)))
     
     if assignment_needed:
         # Run assignment workflow with kmers
@@ -71,7 +72,7 @@ def kmer_assign_predict_workflow(input_dir, mmseqs_db, clusters_tsv, feature_map
         logging.info(f"Found existing feature table: {strain_feature_table_path}. Skipping assignment.")
 
     # Skip prediction if the feature table still doesn't exist
-    if not os.path.exists(strain_feature_table_path):
+    if not os.path.exists(_resolve_table_path(strain_feature_table_path)):
         logging.error(f"Feature table not found: {strain_feature_table_path}. Cannot proceed to prediction workflow.")
         return
 

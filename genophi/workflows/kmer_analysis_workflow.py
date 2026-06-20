@@ -17,6 +17,7 @@ from genophi.kmer_modeling_analysis import (
     plot_segments,
     aggregate_shap_values
 )
+from genophi.mmseqs2_clustering import _write_table, _read_table, _resolve_table_path
 
 def kmer_analysis_workflow(
     aa_sequence_file,
@@ -50,7 +51,7 @@ def kmer_analysis_workflow(
     filtered_kmers = get_predictive_kmers(feature_file_path, feature2cluster_path, feature_type, ignore_families)
     if filtered_kmers.empty: return
     # SAVE OUTPUT
-    filtered_kmers.to_csv(os.path.join(type_output_dir, 'filtered_kmers.csv'), index=False)
+    _write_table(filtered_kmers, os.path.join(type_output_dir, 'filtered_kmers.csv'))
 
     # 3. Merge / Search
     full_df = merge_kmers_with_families(
@@ -75,7 +76,7 @@ def kmer_analysis_workflow(
             return
             
     # SAVE OUTPUT (This corresponds to protein_families_df.csv)
-    full_df.to_csv(os.path.join(type_output_dir, 'protein_families_df.csv'), index=False)
+    _write_table(full_df, os.path.join(type_output_dir, 'protein_families_df.csv'))
 
     # Save protein sequences as FASTA (Useful for external tools)
     logging.info("Saving protein sequences to FASTA...")
@@ -142,7 +143,7 @@ def kmer_analysis_workflow(
     final_aligned_df[['start_indices', 'stop_indices']] = final_aligned_df.apply(find_kmer_indices, axis=1)
     
     # SAVE OUTPUT
-    final_aligned_df.to_csv(os.path.join(type_output_dir, 'aligned_df.csv'), index=False)
+    _write_table(final_aligned_df, os.path.join(type_output_dir, 'aligned_df.csv'))
     
     coverage_df = calculate_coverage(final_aligned_df)
     
@@ -150,7 +151,7 @@ def kmer_analysis_workflow(
     segments_df = identify_segments(coverage_df)
 
     # SAVE OUTPUT
-    segments_df.to_csv(os.path.join(type_output_dir, 'segments_df.csv'), index=False)
+    _write_table(segments_df, os.path.join(type_output_dir, 'segments_df.csv'))
 
     plot_dir = os.path.join(type_output_dir, 'plots')
     plot_segments(segments_df, plot_dir)
@@ -270,9 +271,9 @@ def kmer_analysis_workflow(
         covered_segments_output = covered_segments_output.sort_values(sort_cols)
 
         # SAVE OUTPUT
-        covered_segments_output.to_csv(
+        _write_table(
+            covered_segments_output,
             os.path.join(type_output_dir, 'covered_segments_with_sequences.csv'),
-            index=False
         )
         logging.info(f"Saved {len(covered_segments_output)} covered segments with sequences")
     else:

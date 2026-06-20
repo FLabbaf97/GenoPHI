@@ -9,7 +9,7 @@ from tqdm import tqdm
 import gc
 from Bio import SeqIO
 from concurrent.futures import ThreadPoolExecutor
-from genophi.mmseqs2_clustering import merge_feature_tables
+from genophi.mmseqs2_clustering import merge_feature_tables, _read_table, _write_table, _resolve_table_path, PARQUET_EXT
 from genophi.workflows.select_and_model_workflow import run_modeling_workflow_from_feature_table
 
 # Set up logging
@@ -55,7 +55,13 @@ def write_report(output_dir, start_time, end_time, max_ram_usage, avg_cpu_usage,
         report.write(f"Features in Final Table: {features}\n")
     logging.info(f"Report saved to: {report_file}")
 
-def split_into_kmers(sequence, k, id):
+def _read_kmer_table(filepath):
+    """Read a k-mer workflow table from CSV or parquet."""
+    return _read_table(_resolve_table_path(filepath))
+
+def _kmer_table_exists(filepath):
+    """Check whether a table file exists in CSV or parquet form."""
+    return os.path.exists(_resolve_table_path(filepath))
     """Splits an amino acid sequence into k-mers of length k."""
     logging.info(f"Splitting {id} sequence into k-mers of length {k}.")
     return [sequence[i:i + k] for i in range(len(sequence) - k + 1)]
@@ -101,7 +107,7 @@ def construct_feature_table(fasta_file, protein_csv, k, id_col, one_gene, output
 
     # Load the protein feature data FIRST to get genome mapping
     logging.info(f"Loading protein features from {protein_csv}.")
-    gene_data = pd.read_csv(protein_csv)
+    gene_data = _read_kmer_table(protein_csv)
     
     if 'protein_ID' not in gene_data.columns:
         logging.error(f"'protein_ID' column not found in {protein_csv}.")
@@ -184,9 +190,9 @@ def construct_feature_table(fasta_file, protein_csv, k, id_col, one_gene, output
     # Convert matrix to binary (1 for presence, 0 for absence)
     feature_table = (feature_table > 0).astype(int).reset_index()
 
-    # Save the presence-absence matrix as a CSV
+  # Save the presence-absence matrix (CSV by default)
     feature_table_output = os.path.join(output_dir, f"{output_name}_feature_table.csv")
-    feature_table.to_csv(feature_table_output, index=False)
+    _write_table(feature_table, feature_table_output)
     logging.info(f"Presence-absence matrix saved to {feature_table_output}")
 
     del feature_table  # Clear the feature table
@@ -205,7 +211,7 @@ def get_genome_assignments_tables(presence_absence, genome_column_name, output_d
         genome_assignments_output = os.path.join(output_dir, f"{prefix}_genome_assignments.csv")
     else:
         genome_assignments_output = os.path.join(output_dir, "genome_assignments.csv")
-    genome_assignments.to_csv(genome_assignments_output, index=False)
+    _write_table(genome_assignments, genome_assignments_output)
     logging.info(f"Genome assignments saved to {genome_assignments_output}")
 
     return genome_assignments.drop(columns=["Presence"])
@@ -254,7 +260,7 @@ def feature_selection_optimized(presence_absence, source, genome_column_name, ou
     # Optionally save to CSV if output_dir is provided
     if output_dir:
         selected_features_output = os.path.join(output_dir, f"{prefix}_selected_features.csv" if prefix else "selected_features.csv")
-        selected_features.to_csv(selected_features_output, index=False)
+        _write_table(selected_features, selected_features_output)
         logging.info(f"Selected features saved to {selected_features_output}")
 
     return selected_features
@@ -297,14 +303,14 @@ def feature_assignment(genome_assignments, selected_features, genome_column_name
 
     # Save the feature assignment and final feature table
     feature_assignment_output = os.path.join(output_dir, "feature_assignment.csv")
-    assignment_df.to_csv(feature_assignment_output, index=False)
+    _write_table(assignment_df, feature_assignment_output)
     logging.info(f"Feature assignment saved to {feature_assignment_output}")
 
     if prefix:
         final_feature_table_output = os.path.join(output_dir, f"{prefix}_final_feature_table.csv")
     else:
         final_feature_table_output = os.path.join(output_dir, "final_feature_table.csv")
-    feature_table.to_csv(final_feature_table_output, index=False)
+    _write_table(feature_table, final_feature_table_output)
     logging.info(f"Final feature table saved to {final_feature_table_output}")
 
     return assignment_df, feature_table, final_feature_table_output
@@ -352,30 +358,36 @@ def validate_kmer_checkpoint_file(filepath, min_size=1, file_type='general'):
     Args:
         filepath (str): Path to the file to validate
         min_size (int): Minimum file size in bytes
-        file_type (str): Type of file for specific validation ('csv', 'general')
+        file_type (str): Type of file for specific validation ('csv', 'parquet', 'table', 'general')
     
     Returns:
         bool: True if file is valid, False otherwise
     """
-    if not os.path.exists(filepath):
+    resolved = _resolve_table_path(filepath) if file_type in ('csv', 'parquet', 'table') else filepath
+    if not os.path.exists(resolved):
         return False
     
     # Check file size
-    if os.path.getsize(filepath) < min_size:
-        logging.warning(f"File {filepath} exists but is too small ({os.path.getsize(filepath)} bytes)")
+    if os.path.getsize(resolved) < min_size:
+        logging.warning(f"File {resolved} exists but is too small ({os.path.getsize(resolved)} bytes)")
         return False
     
-    # CSV-specific validation
-    if file_type == 'csv':
+    # Tabular file validation (CSV or parquet)
+    if file_type in ('csv', 'parquet', 'table'):
         try:
-            # Just read header to check structure
-            df = pd.read_csv(filepath, nrows=0)
-            if len(df.columns) == 0:
-                logging.warning(f"CSV file {filepath} has no columns")
-                return False
+            if resolved.endswith(PARQUET_EXT) or resolved.endswith('.parquet'):
+                df = pd.read_parquet(resolved)
+                if df.empty or len(df.columns) == 0:
+                    logging.warning(f"Parquet file {resolved} has no columns")
+                    return False
+            else:
+                df = pd.read_csv(resolved, nrows=0)
+                if len(df.columns) == 0:
+                    logging.warning(f"CSV file {resolved} has no columns")
+                    return False
             return True
         except Exception as e:
-            logging.warning(f"Error validating CSV {filepath}: {e}")
+            logging.warning(f"Error validating table {resolved}: {e}")
             return False
     
     # For general files, just check existence and size
@@ -521,7 +533,7 @@ def run_kmer_table_workflow(
         if not strain_empty:
             
             # Checkpoint 1: Strain feature table construction
-            if not validate_kmer_checkpoint_file(strain_feature_table_path, file_type='csv'):
+            if not validate_kmer_checkpoint_file(strain_feature_table_path, file_type='table'):
                 logging.info("Constructing strain feature table...")
                 strain_feature_table_path = construct_feature_table(strain_fasta, protein_csv, k, id_col, one_gene,
                                                                     feature_output_dir, "strain", k_range, 
@@ -530,12 +542,12 @@ def run_kmer_table_workflow(
                 logging.info(f"Reusing existing strain feature table: {strain_feature_table_path}")
 
             # Load strain feature table (needed for subsequent steps)
-            strain_feature_table = pd.read_csv(strain_feature_table_path)
+            strain_feature_table = _read_kmer_table(strain_feature_table_path)
             input_genomes += strain_feature_table[id_col].nunique()
 
             # Checkpoint 2: Genome assignments and feature selection
             genome_assignments_path = os.path.join(feature_output_dir, "genome_assignments.csv")
-            if not validate_kmer_checkpoint_file(strain_selected_features_path, file_type='csv') or not validate_kmer_checkpoint_file(genome_assignments_path, file_type='csv'):
+            if not validate_kmer_checkpoint_file(strain_selected_features_path, file_type='table') or not validate_kmer_checkpoint_file(genome_assignments_path, file_type='table'):
                 logging.info("Generating genome assignments and feature selection...")
                 
                 # Get genome assignments for strain
@@ -547,15 +559,15 @@ def run_kmer_table_workflow(
                 )
             else:
                 logging.info("Reusing existing genome assignments and selected features")
-                genome_assignments = pd.read_csv(genome_assignments_path)
-                selected_features = pd.read_csv(strain_selected_features_path)
+                genome_assignments = _read_kmer_table(genome_assignments_path)
+                selected_features = _read_kmer_table(strain_selected_features_path)
 
             # Clear strain feature table to save memory
             del strain_feature_table
             gc.collect()
 
             # Checkpoint 3: Final strain feature table
-            if not validate_kmer_checkpoint_file(strain_final_feature_table_path, file_type='csv'):
+            if not validate_kmer_checkpoint_file(strain_final_feature_table_path, file_type='table'):
                 logging.info("Creating final strain feature table...")
                 assignment_df, final_feature_table, strain_final_feature_table_path = feature_assignment(
                     genome_assignments, selected_features, id_col, feature_output_dir, all_genomes=strain_genome_list
@@ -564,7 +576,7 @@ def run_kmer_table_workflow(
             else:
                 logging.info(f"Reusing existing final strain feature table: {strain_final_feature_table_path}")
 
-            select_kmers += len(pd.read_csv(strain_final_feature_table_path).columns) - 1
+            select_kmers += len(_read_kmer_table(strain_final_feature_table_path).columns) - 1
 
             # Clear assignments and selected features
             del selected_features, genome_assignments
@@ -585,7 +597,7 @@ def run_kmer_table_workflow(
                 phage_genome_assignments_path = os.path.join(feature_output_dir, "phage_genome_assignments.csv")
 
                 # Checkpoint 4: Phage feature table construction  
-                if not validate_kmer_checkpoint_file(phage_feature_table_path, file_type='csv'):
+                if not validate_kmer_checkpoint_file(phage_feature_table_path, file_type='table'):
                     logging.info("Constructing phage feature table...")
                     phage_feature_table_path = construct_feature_table(phage_fasta, phage_protein_csv, k, 'phage', one_gene,
                                                                     feature_output_dir, "phage", k_range, ignore_families=ignore_families,
@@ -593,10 +605,10 @@ def run_kmer_table_workflow(
                 else:
                     logging.info(f"Reusing existing phage feature table: {phage_feature_table_path}")
 
-                phage_feature_table = pd.read_csv(phage_feature_table_path)
+                phage_feature_table = _read_kmer_table(phage_feature_table_path)
 
                 # Checkpoint 5: Phage assignments and feature selection
-                if not validate_kmer_checkpoint_file(phage_selected_features_path, file_type='csv') or not validate_kmer_checkpoint_file(phage_genome_assignments_path, file_type='csv'):
+                if not validate_kmer_checkpoint_file(phage_selected_features_path, file_type='table') or not validate_kmer_checkpoint_file(phage_genome_assignments_path, file_type='table'):
                     logging.info("Generating phage assignments and feature selection...")
                     phage_genome_assignments = get_genome_assignments_tables(phage_feature_table, 'phage', feature_output_dir, prefix='phage')
                     phage_selected_features = feature_selection_optimized(
@@ -604,14 +616,14 @@ def run_kmer_table_workflow(
                     )
                 else:
                     logging.info("Reusing existing phage assignments and selected features")
-                    phage_genome_assignments = pd.read_csv(phage_genome_assignments_path)
-                    phage_selected_features = pd.read_csv(phage_selected_features_path)
+                    phage_genome_assignments = _read_kmer_table(phage_genome_assignments_path)
+                    phage_selected_features = _read_kmer_table(phage_selected_features_path)
 
                 del phage_feature_table
                 gc.collect()
 
                 # Checkpoint 6: Final phage feature table
-                if not validate_kmer_checkpoint_file(phage_final_feature_table_path, file_type='csv'):
+                if not validate_kmer_checkpoint_file(phage_final_feature_table_path, file_type='table'):
                     logging.info("Creating final phage feature table...")
                     phage_assignment_df, phage_final_feature_table, phage_final_feature_table_output = feature_assignment(
                         phage_genome_assignments, phage_selected_features, 'phage', feature_output_dir, prefix='phage', all_genomes=phage_genome_list
@@ -631,7 +643,7 @@ def run_kmer_table_workflow(
             
         elif phenotype_matrix:
             # Checkpoint 7: Merged feature table
-            if not validate_kmer_checkpoint_file(merged_table_path, file_type='csv'):
+            if not validate_kmer_checkpoint_file(merged_table_path, file_type='table'):
                 logging.info("Creating merged feature table...")
                 
                 # Handle empty strain case
@@ -657,8 +669,9 @@ def run_kmer_table_workflow(
             else:
                 logging.info(f"Reusing existing merged feature table: {merged_table_path}")
 
+            merged_table_path = _resolve_table_path(merged_table_path)
             logging.info(f"Merged feature table: {merged_table_path}")
-            final_df = pd.read_csv(merged_table_path)
+            final_df = _read_kmer_table(merged_table_path)
             features = len(final_df.columns) - 1
             num_rows = len(final_df)
             
@@ -672,17 +685,18 @@ def run_kmer_table_workflow(
             max_features = num_features
             
         elif not strain_empty:
-            merged_table_path = strain_final_feature_table_path
-            features = len(pd.read_csv(merged_table_path).columns) - 1
+            merged_table_path = _resolve_table_path(strain_final_feature_table_path)
+            features = len(_read_kmer_table(merged_table_path).columns) - 1
         elif not phage_empty:
-            merged_table_path = phage_final_feature_table_output
-            features = len(pd.read_csv(merged_table_path).columns) - 1
+            merged_table_path = _resolve_table_path(phage_final_feature_table_output)
+            features = len(_read_kmer_table(merged_table_path).columns) - 1
         else:
             logging.warning("No feature tables available for modeling")
             features = 0
 
         # MODELING CHECKPOINT
         if modeling and merged_table_path:
+            merged_table_path = _resolve_table_path(merged_table_path)
             # Checkpoint 8: Modeling results
             if not validate_kmer_checkpoint_file(modeling_performance_path, file_type='csv'):
                 logging.info("Running modeling workflow...")

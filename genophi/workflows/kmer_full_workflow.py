@@ -9,6 +9,7 @@ import psutil
 from Bio import SeqIO
 from collections import defaultdict
 from genophi.workflows.kmer_table_workflow import run_kmer_table_workflow
+from genophi.mmseqs2_clustering import _read_table, _resolve_table_path, _write_table
 
 
 def setup_logging(output_dir, log_filename="kmer_workflow.log"):
@@ -185,7 +186,7 @@ def get_full_strain_list(interaction_matrix, input_strain_dir, strain_column):
         list: List of strain names present in both matrix and directory.
     """
     logging.info(f'Reading interaction matrix: {interaction_matrix}')
-    interaction_df = pd.read_csv(interaction_matrix)
+    interaction_df = _read_table(_resolve_table_path(interaction_matrix))
     logging.info(f'Interaction matrix shape: {interaction_df.shape}')
     logging.info(f'Interaction matrix columns: {list(interaction_df.columns)}')
     
@@ -227,7 +228,7 @@ def get_full_phage_list(interaction_matrix, input_phage_dir):
         list: List of phage names present in both matrix and directory.
     """
     logging.info(f'Reading interaction matrix for phages: {interaction_matrix}')
-    interaction_df = pd.read_csv(interaction_matrix)
+    interaction_df = _read_table(_resolve_table_path(interaction_matrix))
     
     # Assume phage column is named 'phage' - adjust if different
     phage_column = 'phage'
@@ -294,9 +295,9 @@ def create_filtered_protein_csv(input_csv, genome_list, output_csv, genome_colum
     """
     logging.info('Creating filtered protein CSV')
     
-    df = pd.read_csv(input_csv)
+    df = _read_table(_resolve_table_path(input_csv))
     filtered_df = df[df[genome_column].isin(genome_list)]
-    filtered_df.to_csv(output_csv, index=False)
+    _write_table(filtered_df, output_csv)
     
     logging.info(f'Filtered protein CSV created at {output_csv} with {len(filtered_df)} proteins')
 
@@ -332,7 +333,7 @@ def generate_filtered_protein_mapping_csv(fasta_dir, output_csv, genome_col_name
             logging.warning(f'FASTA file not found for genome {genome_name}: {fasta_path}')
     
     df = pd.DataFrame(data)
-    df.to_csv(output_csv, index=False)
+    _write_table(df, output_csv)
     logging.info(f'Generated filtered {output_csv} with {len(df)} protein mappings from {len(genome_list)} genomes')
     return output_csv
 
@@ -528,8 +529,8 @@ def run_kmer_workflow(
         )
 
         # Get feature counts for reporting
-        if os.path.exists(merged_feature_table):
-            feature_df = pd.read_csv(merged_feature_table)
+        if merged_feature_table and os.path.exists(_resolve_table_path(merged_feature_table)):
+            feature_df = _read_table(_resolve_table_path(merged_feature_table))
             kmer_features = len(feature_df.columns) - 3  # Subtract non-feature columns
             
             # Count strain vs phage features
@@ -566,8 +567,8 @@ def run_kmer_workflow(
                 logging.info(f"Best performing cutoff: {top_cutoff}")
                 
                 # Set up paths for predictive analysis
-                feature_file_path = os.path.join(output_dir, 'modeling', 'feature_selection', 'filtered_feature_tables', f'select_feature_table_cutoff_{top_cutoff}.csv')
-                selected_features_path = os.path.join(output_dir, 'feature_tables', 'selected_features.csv')
+                feature_file_path = _resolve_table_path(os.path.join(output_dir, 'modeling', 'feature_selection', 'filtered_feature_tables', f'select_feature_table_cutoff_{top_cutoff}.csv'))
+                selected_features_path = _resolve_table_path(os.path.join(output_dir, 'feature_tables', 'selected_features.csv'))
                 model_dir = os.path.join(output_dir, 'modeling', 'modeling_results', f'cutoff_{top_cutoff}')
                 
                 # This step could include k-mer specific predictive analysis

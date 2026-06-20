@@ -5,6 +5,7 @@ import logging
 from genophi.feature_selection import run_feature_selection_iterations, generate_feature_tables
 from genophi.select_feature_modeling import run_experiments
 from genophi.workflows.feature_annotations_workflow import run_predictive_proteins_workflow
+from genophi.mmseqs2_clustering import _resolve_table_path
 
 def setup_logging(output_dir, log_filename="protein_family_workflow.log"):
     """
@@ -193,7 +194,7 @@ def run_modeling_workflow_from_feature_table(
         top_cutoff = performance_df.iloc[0]['cut_off'].split('_')[-1]
 
         # Define paths based on selected top cutoff
-        feature_file_path = os.path.join(base_fs_output_dir, 'filtered_feature_tables', f'select_feature_table_cutoff_{top_cutoff}.csv')
+        feature_file_path = _resolve_table_path(os.path.join(base_fs_output_dir, 'filtered_feature_tables', f'select_feature_table_cutoff_{top_cutoff}.csv'))
         predictive_proteins_output_dir = os.path.join(modeling_output_dir, 'model_performance', 'predictive_proteins')
 
         # Run predictive proteins workflow for strain
@@ -208,7 +209,7 @@ def run_modeling_workflow_from_feature_table(
                 output_fasta='predictive_AA_seqs_strain.faa',
                 protein_id_col=protein_id_col,
                 annotation_table_path=annotation_table_path,
-                feature_assignments_path=os.path.join(output_dir, 'strain', 'features', 'feature_assignments.pq'),
+                feature_assignments_path=os.path.join(output_dir, 'strain', 'features', 'feature_assignments.csv'),
                 strain_column=sample_column
             )
 
@@ -224,7 +225,7 @@ def run_modeling_workflow_from_feature_table(
                 output_fasta='predictive_AA_seqs_phage.faa',
                 protein_id_col=protein_id_col,
                 annotation_table_path=annotation_table_path,
-                feature_assignments_path=os.path.join(output_dir, 'phage', 'features', 'feature_assignments.pq'),
+                feature_assignments_path=os.path.join(output_dir, 'phage', 'features', 'feature_assignments.csv'),
                 strain_column='phage'
             )
     else:

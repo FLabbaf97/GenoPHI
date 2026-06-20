@@ -222,27 +222,27 @@ def run_protein_family_workflow(
             if not os.path.exists(tmp_dir):
                 os.symlink(old_tmp_dir, tmp_dir, target_is_directory=True)
             strain_tmp_dir = os.path.join(output_dir, "tmp", "strain")
-            strain_features_path = os.path.join(strain_output_dir, "features", "feature_table.pq")
+            strain_features_path = os.path.join(strain_output_dir, "features", "feature_table.csv")
 
-        elif os.path.exists(os.path.join(output_dir, "strain", "features", "feature_table.pq")) or os.path.exists(os.path.join(output_dir, "strain", "features", "feature_table.csv")):
+        elif os.path.exists(_resolve_table_path(os.path.join(output_dir, "strain", "features", "feature_table.csv"))):
             logging.info("Using existing strain clustering results...")
             strain_output_dir = os.path.join(output_dir, "strain")
             strain_tmp_dir = os.path.join(output_dir, "tmp", "strain")
-            strain_features_path = os.path.join(strain_output_dir, "features", "feature_table.pq")
+            strain_features_path = os.path.join(strain_output_dir, "features", "feature_table.csv")
 
         else:
             # run normal clustering into new_strain_dir
             strain_output_dir = os.path.join(output_dir, "strain")
             strain_tmp_dir = os.path.join(output_dir, "tmp", "strain")
-            strain_features_path = os.path.join(strain_output_dir, "features", "feature_table.pq")
+            strain_features_path = os.path.join(strain_output_dir, "features", "feature_table.csv")
 
             run_clustering_workflow(input_path_strain, strain_output_dir, strain_tmp_dir, 
                                  min_seq_id, coverage, sensitivity, suffix, threads, 
                                  strain_list, strain_column, compare, bootstrapping, clear_tmp=False)
         
-        if not os.path.exists(strain_features_path):
+        if not os.path.exists(_resolve_table_path(strain_features_path)):
             run_feature_assignment(
-                os.path.join(strain_output_dir, "presence_absence_matrix.pq"), 
+                os.path.join(strain_output_dir, "presence_absence_matrix.csv"), 
                 os.path.join(strain_output_dir, "features"), 
                 source=source_strain, 
                 select=strain_list, 
@@ -250,7 +250,7 @@ def run_protein_family_workflow(
                 max_ram=max_ram
             )
 
-        strain_matrix = _resolve_table_path(os.path.join(strain_output_dir, "presence_absence_matrix.pq"))
+        strain_matrix = _resolve_table_path(os.path.join(strain_output_dir, "presence_absence_matrix.csv"))
         strain_df = _read_table(strain_matrix)
         input_genomes += len(strain_df['Genome'].unique())
         protein_families += len(strain_df.columns) - 1
@@ -270,20 +270,20 @@ def run_protein_family_workflow(
                 if not os.path.exists(phage_output_dir):
                     os.symlink(old_phage_dir, phage_output_dir, target_is_directory=True)
                 phage_tmp_dir = os.path.join(output_dir, "tmp", "phage")
-                phage_features_path = os.path.join(phage_output_dir, "features", "feature_table.pq")
+                phage_features_path = os.path.join(phage_output_dir, "features", "feature_table.csv")
 
                 logging.info("Using existing phage clustering results...")
 
-            elif os.path.exists(os.path.join(output_dir, "phage", "features", "feature_table.pq")) or os.path.exists(os.path.join(output_dir, "phage", "features", "feature_table.csv")):
-                logging.info("Using existing strain clustering results...")
+            elif os.path.exists(_resolve_table_path(os.path.join(output_dir, "phage", "features", "feature_table.csv"))):
+                logging.info("Using existing phage clustering results...")
                 phage_output_dir = os.path.join(output_dir, "phage")
                 phage_tmp_dir = os.path.join(output_dir, "tmp", "phage")
-                phage_features_path = os.path.join(phage_output_dir, "features", "feature_table.pq")
+                phage_features_path = os.path.join(phage_output_dir, "features", "feature_table.csv")
 
             else:
                 phage_output_dir = os.path.join(output_dir, "phage")
                 phage_tmp_dir = os.path.join(output_dir, "tmp", "phage")
-                phage_features_path = os.path.join(phage_output_dir, "features", "feature_table.pq")
+                phage_features_path = os.path.join(phage_output_dir, "features", "feature_table.csv")
 
                 run_clustering_workflow(input_path_phage, phage_output_dir, phage_tmp_dir, 
                                      min_seq_id, coverage, sensitivity, suffix, threads, 
@@ -291,7 +291,7 @@ def run_protein_family_workflow(
 
             if not os.path.exists(_resolve_table_path(phage_features_path)):
                 run_feature_assignment(
-                    os.path.join(phage_output_dir, "presence_absence_matrix.pq"), 
+                    os.path.join(phage_output_dir, "presence_absence_matrix.csv"), 
                     os.path.join(phage_output_dir, "features"), 
                     source=source_phage, 
                     select=phage_list, 
@@ -307,11 +307,11 @@ def run_protein_family_workflow(
             merged_output_dir = os.path.join(output_dir, "merged")
             os.makedirs(merged_output_dir, exist_ok=True)
             feature_selection_input = merge_feature_tables(
-                strain_features=os.path.join(strain_output_dir, "features", "feature_table.pq"),
+                strain_features=os.path.join(strain_output_dir, "features", "feature_table.csv"),
                 phenotype_matrix=phenotype_matrix,
                 output_dir=merged_output_dir,
                 sample_column=sample_column,
-                phage_features=os.path.join(phage_output_dir, "features", "feature_table.pq"),
+                phage_features=os.path.join(phage_output_dir, "features", "feature_table.csv"),
                 remove_suffix=False,
                 use_feature_clustering=use_feature_clustering,
                 feature_cluster_method=feature_cluster_method,
@@ -322,7 +322,7 @@ def run_protein_family_workflow(
             logging.info(f"Merged feature table saved in: {merged_output_dir}")
         else:
             logging.info("Merging strain feature table with phenotype matrix...")
-            strain_features = os.path.join(strain_output_dir, "features", "feature_table.pq")
+            strain_features = os.path.join(strain_output_dir, "features", "feature_table.csv")
             feature_selection_input = merge_feature_tables(
                 strain_features=strain_features,
                 phenotype_matrix=phenotype_matrix,
@@ -425,8 +425,8 @@ def run_protein_family_workflow(
         performance_df = pd.read_csv(metrics_file)
         top_cutoff = performance_df.iloc[0]['cut_off'].split('_')[-1]
 
-        feature_file_path = os.path.join(output_dir, 'feature_selection', 'filtered_feature_tables', f'select_feature_table_cutoff_{top_cutoff}.csv')
-        feature2cluster_path = os.path.join(output_dir, 'strain', 'features', 'selected_features.pq')
+        feature_file_path = _resolve_table_path(os.path.join(output_dir, 'feature_selection', 'filtered_feature_tables', f'select_feature_table_cutoff_{top_cutoff}.csv'))
+        feature2cluster_path = os.path.join(output_dir, 'strain', 'features', 'selected_features.csv')
         cluster2protein_path = os.path.join(output_dir, 'strain', 'clusters.tsv')
         modified_AA_path = os.path.join(output_dir, 'strain', 'modified_AAs', 'strain')
         if os.path.exists(modified_AA_path):
@@ -435,7 +435,7 @@ def run_protein_family_workflow(
             fasta_dir_or_file = input_path_strain
         modeling_dir = os.path.join(output_dir, 'modeling_results', f'cutoff_{top_cutoff}')
         predictive_proteins_output_dir = os.path.join(output_dir, 'modeling_results', 'model_performance', 'predictive_proteins')
-        feature_assignments_path = os.path.join(output_dir, 'strain', 'features', 'feature_assignments.pq')
+        feature_assignments_path = os.path.join(output_dir, 'strain', 'features', 'feature_assignments.csv')
 
         run_predictive_proteins_workflow(
             feature_file_path=feature_file_path,
@@ -454,14 +454,14 @@ def run_protein_family_workflow(
 
         if input_path_phage:
             logging.info("Running predictive proteins workflow for phage...")
-            feature2cluster_path = os.path.join(output_dir, 'phage', 'features', 'selected_features.pq')
+            feature2cluster_path = os.path.join(output_dir, 'phage', 'features', 'selected_features.csv')
             cluster2protein_path = os.path.join(output_dir, 'phage', 'clusters.tsv')
             modified_AA_path_phage = os.path.join(output_dir, 'phage', 'modified_AAs', 'phage')
             if os.path.exists(modified_AA_path_phage):
                 fasta_dir_or_file = modified_AA_path_phage
             else:
                 fasta_dir_or_file = input_path_phage
-            feature_assignments_path = os.path.join(output_dir, 'phage', 'features', 'feature_assignments.pq')
+            feature_assignments_path = os.path.join(output_dir, 'phage', 'features', 'feature_assignments.csv')
 
             run_predictive_proteins_workflow(
                 feature_file_path=feature_file_path,

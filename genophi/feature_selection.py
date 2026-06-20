@@ -35,7 +35,7 @@ def load_and_prepare_data(input_path, sample_column=None, phenotype_column=None,
     """
     from genophi.utils import validate_phenotype_task_type
 
-    from genophi.mmseqs2_clustering import _read_table, _resolve_table_path
+    from genophi.mmseqs2_clustering import _read_table, _resolve_table_path, _write_table
     resolved = _resolve_table_path(input_path)
     if not os.path.exists(resolved):
         raise FileNotFoundError(f"The input file {input_path} does not exist.")
@@ -1594,7 +1594,7 @@ def generate_feature_tables(
     if phenotype_column is None:
         phenotype_column = 'interaction'
 
-    from genophi.mmseqs2_clustering import _read_table, _resolve_table_path
+    from genophi.mmseqs2_clustering import _read_table, _resolve_table_path, _write_table
     full_feature_table = _read_table(_resolve_table_path(full_feature_table_file))
     interaction_count = full_feature_table.shape[0]
     print('Interaction count:', interaction_count)
@@ -1670,4 +1670,4 @@ def generate_feature_tables(
             os.makedirs(filter_table_dir, exist_ok=True)
             select_feature_table_path = os.path.join(filter_table_dir, f'select_feature_table_cutoff_{cut_off}.csv')
             print(f"Saving feature table to {select_feature_table_path}")
-            select_feature_table.to_csv(select_feature_table_path, index=False)
+            _write_table(select_feature_table, select_feature_table_path)

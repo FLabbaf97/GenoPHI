@@ -14,7 +14,7 @@ from functools import partial
 # Suppress DataFrame fragmentation warning
 warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
 
-from genophi.mmseqs2_clustering import create_mmseqs_database, load_strains, create_contig_to_genome_dict, select_best_hits
+from genophi.mmseqs2_clustering import create_mmseqs_database, load_strains, create_contig_to_genome_dict, select_best_hits, _read_table, _write_table, _resolve_table_path
 
 def load_aa_sequences_from_files(fasta_files):
     """
@@ -225,7 +225,7 @@ def map_features_with_kmers_and_sequences(best_hits_tsv, feature_map, filtered_k
     Returns:
         pd.DataFrame: Combined feature presence table for all genomes.
     """
-    if not os.path.exists(best_hits_tsv) or not os.path.exists(filtered_kmers):
+    if not os.path.exists(best_hits_tsv) or not os.path.exists(_resolve_table_path(filtered_kmers)):
         logging.error(f"Required input files do not exist: {best_hits_tsv}, {filtered_kmers}")
         return None
 
@@ -237,8 +237,8 @@ def map_features_with_kmers_and_sequences(best_hits_tsv, feature_map, filtered_k
         best_hits_df = best_hits_df.dropna(subset=['Cluster'])
         logging.info(f"After filtering NaN clusters: {len(best_hits_df)} rows remain")
         
-        feature_mapping = pd.read_csv(feature_map)
-        kmer_mapping = pd.read_csv(filtered_kmers)
+        feature_mapping = _read_table(_resolve_table_path(feature_map))
+        kmer_mapping = _read_table(_resolve_table_path(filtered_kmers))
 
         # Print column information for debugging
         logging.info(f"Feature mapping columns: {feature_mapping.columns}")
@@ -480,7 +480,7 @@ def run_kmer_assign_features_workflow(input_dir, mmseqs_db, tmp_dir, output_dir,
     # Check if final output already exists
     combined_feature_table_path = os.path.join(output_dir, f'{genome_type}_combined_feature_table.csv')
     
-    if reuse_existing and os.path.exists(combined_feature_table_path):
+    if reuse_existing and os.path.exists(_resolve_table_path(combined_feature_table_path)):
         logging.info(f"Found existing feature table: {combined_feature_table_path}. Reusing it.")
         return
     
@@ -564,7 +564,7 @@ def run_kmer_assign_features_workflow(input_dir, mmseqs_db, tmp_dir, output_dir,
     )
 
     if feature_presence is not None:
-        feature_presence.to_csv(combined_feature_table_path, index=False)
+        _write_table(feature_presence, combined_feature_table_path)
         logging.info(f"Combined feature table saved to {combined_feature_table_path}")
     else:
         logging.error(f"Failed to generate feature presence table for {genome_type}s.")
@@ -574,7 +574,7 @@ def main():
     parser.add_argument('--input_dir', type=str, required=True, help="Directory containing genome FASTA files.")
     parser.add_argument('--mmseqs_db', type=str, required=True, help="Path to the existing MMseqs2 database.")
     parser.add_argument('--clusters_tsv', type=str, required=True, help="Path to the clusters TSV file.")
-    parser.add_argument('--feature_map', type=str, required=True, help="Path to the feature map (selected_features.csv).")
+    parser.add_argument('--feature_map', type=str, required=True, help="Path to the feature map (selected_features.csv or .pq).")
     parser.add_argument('--output_dir', type=str, required=True, help="Directory to save results.")
     parser.add_argument('--tmp_dir', type=str, required=True, help="Temporary directory for intermediate files.")
     parser.add_argument('--genome_type', type=str, choices=['strain', 'phage'], default='strain', help="Type of genome to process.")
@@ -584,7 +584,7 @@ def main():
     parser.add_argument('--min_seq_id', type=float, default=0.4, help="Minimum sequence identity for assignment.")
     parser.add_argument('--threads', type=int, default=4, help="Number of threads for MMseqs2.")
     parser.add_argument('--suffix', type=str, default='faa', help="Suffix for FASTA files.")
-    parser.add_argument('--filtered_kmers', type=str, required=True, help="Path to the filtered kmers CSV file.")
+    parser.add_argument('--filtered_kmers', type=str, required=True, help="Path to the filtered kmers table (CSV or parquet).")
     parser.add_argument('--aa_sequence_file', type=str, required=True, help="Path to the FASTA file containing amino acid sequences.")
     parser.add_argument('--threshold', type=float, default=0.001, help="Threshold for kmer matching percentage.")
     parser.add_argument('--reuse_existing', action='store_true', help="Reuse existing output files if available.")

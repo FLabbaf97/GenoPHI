@@ -556,7 +556,12 @@ def run_experiments(
     """
     start_total_time = time.time()
     if os.path.isdir(input_dir):
-        feature_tables = sorted(os.listdir(input_dir))
+        feature_tables = sorted([
+            f for f in os.listdir(input_dir)
+            if os.path.isfile(os.path.join(input_dir, f))
+            and 'cutoff' in f
+            and (f.endswith('.csv') or f.endswith('.pq') or f.endswith('.parquet'))
+        ])
     else:
         feature_tables = [os.path.basename(input_dir)]
 
