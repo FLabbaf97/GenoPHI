@@ -463,6 +463,9 @@ genophi predict \
 
 ```
 training_output/
+├── feature_table_modeling_report.csv   # all CLI parameters + input/final feature counts
+├── feature_table_modeling_report.txt   # human-readable summary
+├── feature_table_modeling_workflow.log
 ├── feature_selection/
 │   ├── features_occurrence.csv
 │   └── filtered_feature_tables/

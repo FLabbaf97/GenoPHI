@@ -1,13 +1,68 @@
 import os
 import argparse
-import pandas as pd
+import csv
 import logging
+import pickle
+import time
+
+import pandas as pd
+import psutil
+
 from genophi.feature_selection import run_feature_selection_iterations, generate_feature_tables
+from genophi.mmseqs2_clustering import _read_table, _resolve_table_path
 from genophi.select_feature_modeling import run_experiments
 from genophi.workflows.feature_annotations_workflow import run_predictive_proteins_workflow
-from genophi.mmseqs2_clustering import _resolve_table_path
 
-def setup_logging(output_dir, log_filename="protein_family_workflow.log"):
+MODELING_REPORT_CSV = "feature_table_modeling_report.csv"
+MODELING_REPORT_TXT = "feature_table_modeling_report.txt"
+MODELING_LOG_FILENAME = "feature_table_modeling_workflow.log"
+
+WORKFLOW_PARAM_KEYS = (
+    "full_feature_table",
+    "output_dir",
+    "threads",
+    "num_features",
+    "filter_type",
+    "num_runs_fs",
+    "num_runs_modeling",
+    "sample_column",
+    "phage_column",
+    "phenotype_column",
+    "method",
+    "annotation_table_path",
+    "protein_id_col",
+    "feature2cluster_path",
+    "cluster2protein_path",
+    "fasta_dir_or_file",
+    "run_predictive_proteins",
+    "phage_feature2cluster_path",
+    "phage_cluster2protein_path",
+    "phage_fasta_dir_or_file",
+    "task_type",
+    "binary_data",
+    "max_features",
+    "min_features",
+    "use_dynamic_weights",
+    "weights_method",
+    "use_clustering",
+    "cluster_method",
+    "n_clusters",
+    "min_cluster_size",
+    "min_samples",
+    "cluster_selection_epsilon",
+    "check_feature_presence",
+    "filter_by_cluster_presence",
+    "min_cluster_presence",
+    "max_ram",
+    "use_shap",
+)
+
+METADATA_COLUMN_CANDIDATES = frozenset(
+    {"strain", "phage", "interaction", "header", "contig_id", "orf_ko"}
+)
+
+
+def setup_logging(output_dir, log_filename=MODELING_LOG_FILENAME):
     """
     Set up logging to both console and file if logging is not already configured.
 
@@ -31,6 +86,154 @@ def setup_logging(output_dir, log_filename="protein_family_workflow.log"):
         logging.info("Logging initialized. Logs will be written to: %s", log_file)
     else:
         logging.info("Logging is already configured by the calling workflow.")
+
+
+def write_modeling_report_csv(output_dir, data, filename=MODELING_REPORT_CSV):
+    """Write key-value configuration and summary statistics to CSV."""
+    os.makedirs(output_dir, exist_ok=True)
+    csv_path = os.path.join(output_dir, filename)
+    with open(csv_path, mode="w", newline="") as file:
+        writer = csv.writer(file)
+        writer.writerow(["Variable", "Value"])
+        for key, value in data.items():
+            writer.writerow([key, value])
+    logging.info("Modeling configuration report saved to %s", csv_path)
+
+
+def write_modeling_report_txt(output_dir, data, filename=MODELING_REPORT_TXT):
+    """Write a human-readable summary of the modeling workflow."""
+    txt_path = os.path.join(output_dir, filename)
+    with open(txt_path, "w") as report:
+        report.write("Feature Table Modeling Workflow Report\n")
+        report.write("=" * 42 + "\n")
+        for key, value in data.items():
+            report.write(f"{key}: {value}\n")
+    logging.info("Modeling summary report saved to %s", txt_path)
+
+
+def _metadata_columns(df, sample_column, phage_column, phenotype_column, filter_type):
+    """Return column names that are not GenoPHI protein-family features."""
+    cols = {sample_column, phenotype_column, filter_type} | METADATA_COLUMN_CANDIDATES
+    if phage_column in df.columns:
+        cols.add(phage_column)
+    return [col for col in df.columns if col in cols]
+
+
+def summarize_feature_table_columns(
+    df,
+    sample_column="strain",
+    phage_column="phage",
+    phenotype_column="interaction",
+    filter_type="none",
+):
+    """Count strain (sc_*), phage (pc_*), and other feature columns."""
+    meta = set(_metadata_columns(df, sample_column, phage_column, phenotype_column, filter_type))
+    feature_cols = [col for col in df.columns if col not in meta]
+    strain_features = [col for col in feature_cols if col.startswith("sc_")]
+    phage_features = [col for col in feature_cols if col.startswith("pc_")]
+    other_features = [col for col in feature_cols if not col.startswith(("sc_", "pc_"))]
+
+    summary = {
+        "n_rows": len(df),
+        "n_strains": df[sample_column].nunique() if sample_column in df.columns else None,
+        "strain_feature_count": len(strain_features),
+        "phage_feature_count": len(phage_features),
+        "other_feature_count": len(other_features),
+        "total_feature_count": len(feature_cols),
+    }
+    if phage_column in df.columns:
+        summary["n_phages"] = df[phage_column].nunique()
+    else:
+        summary["n_phages"] = None
+    return summary
+
+
+def _resolve_top_cutoff(modeling_output_dir):
+    """Return the best-performing cutoff label (e.g. '3') from modeling metrics."""
+    metrics_file = os.path.join(
+        modeling_output_dir, "model_performance", "model_performance_metrics.csv"
+    )
+    if not os.path.exists(metrics_file):
+        logging.warning("Model performance metrics not found: %s", metrics_file)
+        return None, None
+
+    performance_df = pd.read_csv(metrics_file)
+    if performance_df.empty:
+        return None, None
+
+    top_row = performance_df.iloc[0]
+    cut_off = str(top_row["cut_off"])
+    top_cutoff = cut_off.split("_")[-1]
+    top_metric = top_row.get("MCC", top_row.get("r2"))
+    return top_cutoff, top_metric
+
+
+def _load_model_feature_names(model_dir):
+    """Load feature names from the first available best_model.pkl in model_dir."""
+    if not os.path.isdir(model_dir):
+        return None
+
+    run_dirs = sorted(
+        d for d in os.listdir(model_dir) if d.startswith("run") and os.path.isdir(os.path.join(model_dir, d))
+    )
+    for run_dir in run_dirs:
+        model_path = os.path.join(model_dir, run_dir, "best_model.pkl")
+        if not os.path.exists(model_path):
+            continue
+        with open(model_path, "rb") as handle:
+            model = pickle.load(handle)
+        feature_names = getattr(model, "feature_names_", None)
+        if feature_names:
+            return list(feature_names)
+    return None
+
+
+def summarize_final_model_features(
+    modeling_output_dir,
+    base_fs_output_dir,
+    sample_column,
+    phage_column,
+    phenotype_column,
+    filter_type,
+):
+    """Summarize features used in the top-performing cutoff model."""
+    top_cutoff, top_metric = _resolve_top_cutoff(modeling_output_dir)
+    if top_cutoff is None:
+        return {"top_cutoff": None, "top_model_metric": None}
+
+    cutoff_feature_path = _resolve_table_path(
+        os.path.join(
+            base_fs_output_dir,
+            "filtered_feature_tables",
+            f"select_feature_table_cutoff_{top_cutoff}.csv",
+        )
+    )
+    cutoff_df = _read_table(cutoff_feature_path)
+    cutoff_summary = summarize_feature_table_columns(
+        cutoff_df, sample_column, phage_column, phenotype_column, filter_type
+    )
+
+    model_dir = os.path.join(modeling_output_dir, f"cutoff_{top_cutoff}")
+    model_feature_names = _load_model_feature_names(model_dir)
+    model_summary = {}
+    if model_feature_names:
+        model_summary = {
+            "final_model_strain_feature_count": sum(name.startswith("sc_") for name in model_feature_names),
+            "final_model_phage_feature_count": sum(name.startswith("pc_") for name in model_feature_names),
+            "final_model_other_feature_count": sum(
+                not name.startswith(("sc_", "pc_")) for name in model_feature_names
+            ),
+            "final_model_total_feature_count": len(model_feature_names),
+        }
+
+    return {
+        "top_cutoff": top_cutoff,
+        "top_model_metric": top_metric,
+        "top_cutoff_feature_table": cutoff_feature_path,
+        **{f"final_{k}": v for k, v in cutoff_summary.items() if k.startswith(("strain_", "phage_", "other_", "total_"))},
+        **model_summary,
+    }
+
 
 def run_modeling_workflow_from_feature_table(
     full_feature_table, 
@@ -110,126 +313,213 @@ def run_modeling_workflow_from_feature_table(
         cluster_selection_epsilon (float): Epsilon value for HDBSCAN clustering.
         check_feature_presence (bool): If True, only include features present in both train and test sets.
     """
+    os.makedirs(output_dir, exist_ok=True)
     setup_logging(output_dir)
 
-    # Step 1: Feature Selection
-    logging.info("Step : Running feature selection iterations...")
-    base_fs_output_dir = os.path.join(output_dir, 'feature_selection')
-    run_feature_selection_iterations(
-        input_path=full_feature_table,
-        base_output_dir=base_fs_output_dir,
-        threads=threads,
-        num_features=num_features,
+    start_time = time.time()
+    ram_monitor = psutil.Process()
+    max_ram_usage = 0
+    cpu_usage_points: list[float] = []
+    workflow_params = {key: locals()[key] for key in WORKFLOW_PARAM_KEYS}
+    final_model_summary: dict = {}
+
+    input_table_summary = summarize_feature_table_columns(
+        _read_table(_resolve_table_path(full_feature_table)),
+        sample_column=sample_column,
+        phage_column=phage_column,
+        phenotype_column=phenotype_column,
         filter_type=filter_type,
-        num_runs=num_runs_fs,
-        method=method,
-        sample_column=sample_column,
-        phenotype_column=phenotype_column,
-        phage_column=phage_column,
-        task_type=task_type,
-        max_ram=max_ram,
-        use_dynamic_weights=use_dynamic_weights,
-        weights_method=weights_method,
-        use_clustering=use_clustering,
-        cluster_method=cluster_method,
-        n_clusters=n_clusters,
-        min_cluster_size=min_cluster_size,
-        min_samples=min_samples,
-        cluster_selection_epsilon=cluster_selection_epsilon,
-        check_feature_presence=check_feature_presence,
-        filter_by_cluster_presence=filter_by_cluster_presence,
-        min_cluster_presence=min_cluster_presence
+    )
+    logging.info(
+        "Input feature table: %s rows, %s strain features, %s phage features",
+        input_table_summary["n_rows"],
+        input_table_summary["strain_feature_count"],
+        input_table_summary["phage_feature_count"],
     )
 
-    # Step 2: Generate feature tables from feature selection results
-    logging.info("Generating feature tables from feature selection results...")
-    max_features = None if max_features == 'none' else int(max_features)
-    min_features_val = None if min_features == 'none' else int(min_features)
-    filter_table_dir = os.path.join(base_fs_output_dir, 'filtered_feature_tables')
-    generate_feature_tables(
-        model_testing_dir=base_fs_output_dir,
-        full_feature_table_file=full_feature_table,
-        filter_table_dir=filter_table_dir,
-        phenotype_column=phenotype_column,
-        sample_column=sample_column,
-        cut_offs=[3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 22, 25, 27, 30, 32, 35, 37, 40, 42, 45, 47, 50],
-        binary_data=binary_data,
-        max_features=max_features,
-        min_features=min_features_val,
-        filter_type=filter_type
-    )
+    try:
+        # Step 1: Feature Selection
+        logging.info("Step 1: Running feature selection iterations...")
+        base_fs_output_dir = os.path.join(output_dir, "feature_selection")
+        run_feature_selection_iterations(
+            input_path=full_feature_table,
+            base_output_dir=base_fs_output_dir,
+            threads=threads,
+            num_features=num_features,
+            filter_type=filter_type,
+            num_runs=num_runs_fs,
+            method=method,
+            sample_column=sample_column,
+            phenotype_column=phenotype_column,
+            phage_column=phage_column,
+            task_type=task_type,
+            max_ram=max_ram,
+            use_dynamic_weights=use_dynamic_weights,
+            weights_method=weights_method,
+            use_clustering=use_clustering,
+            cluster_method=cluster_method,
+            n_clusters=n_clusters,
+            min_cluster_size=min_cluster_size,
+            min_samples=min_samples,
+            cluster_selection_epsilon=cluster_selection_epsilon,
+            check_feature_presence=check_feature_presence,
+            filter_by_cluster_presence=filter_by_cluster_presence,
+            min_cluster_presence=min_cluster_presence,
+        )
+        max_ram_usage = max(max_ram_usage, ram_monitor.memory_info().rss)
+        cpu_usage_points.append(psutil.cpu_percent(interval=None))
 
-    # Step 3: Modeling
-    logging.info("Step 2: Running modeling experiments...")
-    modeling_output_dir = os.path.join(output_dir, 'modeling_results')
-    run_experiments(
-        input_dir=filter_table_dir,
-        base_output_dir=modeling_output_dir,
-        threads=threads,
-        num_runs=num_runs_modeling,
-        set_filter=filter_type,
-        sample_column=sample_column,
-        phage_column=phage_column,
-        phenotype_column=phenotype_column,
-        task_type=task_type,
-        binary_data=binary_data,
-        use_dynamic_weights=use_dynamic_weights,
-        weights_method=weights_method,
-        use_clustering=use_clustering,
-        cluster_method=cluster_method,
-        n_clusters=n_clusters,
-        min_cluster_size=min_cluster_size,
-        min_samples=min_samples,
-        cluster_selection_epsilon=cluster_selection_epsilon,
-        max_ram=max_ram,
-        use_shap=use_shap
-    )
+        # Step 2: Generate feature tables from feature selection results
+        logging.info("Generating feature tables from feature selection results...")
+        max_features_val = None if max_features == "none" else int(max_features)
+        min_features_val = None if min_features == "none" else int(min_features)
+        filter_table_dir = os.path.join(base_fs_output_dir, "filtered_feature_tables")
+        generate_feature_tables(
+            model_testing_dir=base_fs_output_dir,
+            full_feature_table_file=full_feature_table,
+            filter_table_dir=filter_table_dir,
+            phenotype_column=phenotype_column,
+            sample_column=sample_column,
+            cut_offs=[3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 22, 25, 27, 30, 32, 35, 37, 40, 42, 45, 47, 50],
+            binary_data=binary_data,
+            max_features=max_features_val,
+            min_features=min_features_val,
+            filter_type=filter_type,
+        )
+        max_ram_usage = max(max_ram_usage, ram_monitor.memory_info().rss)
+        cpu_usage_points.append(psutil.cpu_percent(interval=None))
 
-    # Conditional Step 4: Predictive Proteins Workflow
-    if run_predictive_proteins:
-        logging.info("Step 3: Selecting top-performing cutoff and running predictive proteins workflow...")
-        
-        metrics_file = os.path.join(modeling_output_dir, 'model_performance', 'model_performance_metrics.csv')
-        performance_df = pd.read_csv(metrics_file)
-        top_cutoff = performance_df.iloc[0]['cut_off'].split('_')[-1]
+        # Step 3: Modeling
+        logging.info("Step 3: Running modeling experiments...")
+        modeling_output_dir = os.path.join(output_dir, "modeling_results")
+        run_experiments(
+            input_dir=filter_table_dir,
+            base_output_dir=modeling_output_dir,
+            threads=threads,
+            num_runs=num_runs_modeling,
+            set_filter=filter_type,
+            sample_column=sample_column,
+            phage_column=phage_column,
+            phenotype_column=phenotype_column,
+            task_type=task_type,
+            binary_data=binary_data,
+            use_dynamic_weights=use_dynamic_weights,
+            weights_method=weights_method,
+            use_clustering=use_clustering,
+            cluster_method=cluster_method,
+            n_clusters=n_clusters,
+            min_cluster_size=min_cluster_size,
+            min_samples=min_samples,
+            cluster_selection_epsilon=cluster_selection_epsilon,
+            max_ram=max_ram,
+            use_shap=use_shap,
+        )
+        max_ram_usage = max(max_ram_usage, ram_monitor.memory_info().rss)
+        cpu_usage_points.append(psutil.cpu_percent(interval=None))
 
-        # Define paths based on selected top cutoff
-        feature_file_path = _resolve_table_path(os.path.join(base_fs_output_dir, 'filtered_feature_tables', f'select_feature_table_cutoff_{top_cutoff}.csv'))
-        predictive_proteins_output_dir = os.path.join(modeling_output_dir, 'model_performance', 'predictive_proteins')
+        final_model_summary = summarize_final_model_features(
+            modeling_output_dir,
+            base_fs_output_dir,
+            sample_column,
+            phage_column,
+            phenotype_column,
+            filter_type,
+        )
+        logging.info(
+            "Top cutoff: %s | final strain features: %s | final phage features: %s",
+            final_model_summary.get("top_cutoff"),
+            final_model_summary.get(
+                "final_model_strain_feature_count",
+                final_model_summary.get("final_strain_feature_count"),
+            ),
+            final_model_summary.get(
+                "final_model_phage_feature_count",
+                final_model_summary.get("final_phage_feature_count"),
+            ),
+        )
 
-        # Run predictive proteins workflow for strain
-        if feature2cluster_path and cluster2protein_path:
-            run_predictive_proteins_workflow(
-                feature_file_path=feature_file_path,
-                feature2cluster_path=feature2cluster_path,
-                cluster2protein_path=cluster2protein_path,
-                fasta_dir_or_file=fasta_dir_or_file,
-                modeling_dir=os.path.join(modeling_output_dir, f'cutoff_{top_cutoff}'),
-                output_dir=predictive_proteins_output_dir,
-                output_fasta='predictive_AA_seqs_strain.faa',
-                protein_id_col=protein_id_col,
-                annotation_table_path=annotation_table_path,
-                feature_assignments_path=os.path.join(output_dir, 'strain', 'features', 'feature_assignments.csv'),
-                strain_column=sample_column
-            )
+        # Step 4: Predictive Proteins Workflow (optional)
+        if run_predictive_proteins:
+            logging.info("Step 4: Selecting top-performing cutoff and running predictive proteins workflow...")
+            top_cutoff = final_model_summary.get("top_cutoff")
+            if top_cutoff is None:
+                logging.warning("Skipping predictive proteins workflow: no top cutoff identified.")
+            else:
+                feature_file_path = _resolve_table_path(
+                    os.path.join(
+                        base_fs_output_dir,
+                        "filtered_feature_tables",
+                        f"select_feature_table_cutoff_{top_cutoff}.csv",
+                    )
+                )
+                predictive_proteins_output_dir = os.path.join(
+                    modeling_output_dir, "model_performance", "predictive_proteins"
+                )
 
-        # Run predictive proteins workflow for phage, if phage parameters are provided
-        if phage_feature2cluster_path and phage_cluster2protein_path:
-            run_predictive_proteins_workflow(
-                feature_file_path=feature_file_path,
-                feature2cluster_path=phage_feature2cluster_path,
-                cluster2protein_path=phage_cluster2protein_path,
-                fasta_dir_or_file=phage_fasta_dir_or_file,
-                modeling_dir=os.path.join(modeling_output_dir, f'cutoff_{top_cutoff}'),
-                output_dir=predictive_proteins_output_dir,
-                output_fasta='predictive_AA_seqs_phage.faa',
-                protein_id_col=protein_id_col,
-                annotation_table_path=annotation_table_path,
-                feature_assignments_path=os.path.join(output_dir, 'phage', 'features', 'feature_assignments.csv'),
-                strain_column='phage'
-            )
-    else:
-        logging.info("Step 3: Predictive proteins workflow skipped.")
+                if feature2cluster_path and cluster2protein_path:
+                    run_predictive_proteins_workflow(
+                        feature_file_path=feature_file_path,
+                        feature2cluster_path=feature2cluster_path,
+                        cluster2protein_path=cluster2protein_path,
+                        fasta_dir_or_file=fasta_dir_or_file,
+                        modeling_dir=os.path.join(modeling_output_dir, f"cutoff_{top_cutoff}"),
+                        output_dir=predictive_proteins_output_dir,
+                        output_fasta="predictive_AA_seqs_strain.faa",
+                        protein_id_col=protein_id_col,
+                        annotation_table_path=annotation_table_path,
+                        feature_assignments_path=os.path.join(
+                            output_dir, "strain", "features", "feature_assignments.csv"
+                        ),
+                        strain_column=sample_column,
+                    )
+
+                if phage_feature2cluster_path and phage_cluster2protein_path:
+                    run_predictive_proteins_workflow(
+                        feature_file_path=feature_file_path,
+                        feature2cluster_path=phage_feature2cluster_path,
+                        cluster2protein_path=phage_cluster2protein_path,
+                        fasta_dir_or_file=phage_fasta_dir_or_file,
+                        modeling_dir=os.path.join(modeling_output_dir, f"cutoff_{top_cutoff}"),
+                        output_dir=predictive_proteins_output_dir,
+                        output_fasta="predictive_AA_seqs_phage.faa",
+                        protein_id_col=protein_id_col,
+                        annotation_table_path=annotation_table_path,
+                        feature_assignments_path=os.path.join(
+                            output_dir, "phage", "features", "feature_assignments.csv"
+                        ),
+                        strain_column="phage",
+                    )
+        else:
+            logging.info("Step 4: Predictive proteins workflow skipped.")
+
+    except Exception:
+        logging.exception("Feature table modeling workflow failed.")
+        raise
+    finally:
+        end_time = time.time()
+        max_ram_usage = max(max_ram_usage, ram_monitor.memory_info().rss)
+        if cpu_usage_points:
+            avg_cpu_usage = sum(cpu_usage_points) / len(cpu_usage_points)
+            max_cpu_usage = max(cpu_usage_points)
+        else:
+            avg_cpu_usage = 0.0
+            max_cpu_usage = 0.0
+
+        report_data = {
+            **workflow_params,
+            **{f"input_{k}": v for k, v in input_table_summary.items()},
+            **final_model_summary,
+            "start_time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(start_time)),
+            "end_time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(end_time)),
+            "total_runtime_seconds": round(end_time - start_time, 2),
+            "ram_usage_gb": max_ram_usage / (1024**3),
+            "avg_cpu_usage": avg_cpu_usage,
+            "max_cpu_usage": max_cpu_usage,
+        }
+
+        write_modeling_report_csv(output_dir, report_data)
+        write_modeling_report_txt(output_dir, report_data)
+
 
 # Main function for CLI
 def main():
@@ -318,6 +608,7 @@ def main():
         task_type=args.task_type,
         binary_data=args.binary_data,
         max_features=args.max_features,
+        min_features=args.min_features,
         use_dynamic_weights=args.use_dynamic_weights,
         weights_method=args.weights_method,
         use_clustering=args.use_clustering,
