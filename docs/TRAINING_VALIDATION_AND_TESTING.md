@@ -22,6 +22,7 @@ It complements the main [README](../README.md) with workflow-focused detail and 
 7. [Workflow A: Pre-Merged Feature Table](#7-workflow-a-pre-merged-feature-table)
 8. [Workflow B: Full Protein-Family Pipeline](#8-workflow-b-full-protein-family-pipeline)
 9. [Workflow C: External Inference (Saved Models)](#9-workflow-c-external-inference-saved-models)
+   - [9.5 Evaluate saved models on labeled merged features](#95-evaluate-saved-models-on-labeled-merged-features)
 10. [Configuration Reference](#10-configuration-reference)
 11. [Reading Results](#11-reading-results)
 12. [Troubleshooting](#12-troubleshooting)
@@ -72,6 +73,7 @@ genophi --help
 | `genophi protein-family-workflow` | You have `.faa` files and want the full pipeline |
 | `genophi assign-predict` | New genomes (FASTA) + saved MMseqs DB + saved models |
 | `genophi predict` | Pre-computed feature rows for new pairs (no FASTA assignment) |
+| `scripts/evaluate_saved_model.py` | **Evaluate** saved models on a **labeled** merged feature table (metrics + plots) |
 
 ---
 
@@ -146,6 +148,7 @@ GenoPHI does **not** ship a single "train / val / test" flag. You implement thre
 │  • Strains NEVER seen during training                                   │
 │  • genophi assign-predict (from FASTA + MMseqs DB)                     │
 │    OR genophi predict (from pre-built feature rows)                     │
+│    OR evaluate_saved_model.py (labeled merged features → metrics)    │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -162,7 +165,7 @@ GenoPHI has **no `--holdout_strains` flag**. You must:
 
 1. **Exclude** external bacteria from the training phenotype matrix and merged feature table.
 2. After training, run inference separately on external strains using `assign-predict` or `predict`.
-3. Optionally compare predictions to a separate `external_interactions.csv` ground truth.
+3. If you have **ground-truth labels** for external pairs in a merged feature table, run `scripts/evaluate_saved_model.py` to score performance (see [§9.5](#95-evaluate-saved-models-on-labeled-merged-features)).
 
 **Important:** If external strain rows are included in the training CSV, the model may have seen those strains during internal CV (depending on split luck) or feature selection — this is **not** a clean external test.
 
@@ -346,7 +349,7 @@ Create two files from your master table:
 # (do this with pandas, or manually edit CSV)
 
 # train_merged_features.csv   → strains in TRAIN_SET only
-# external_ground_truth.csv   → optional labels for evaluation only
+# external_merged_features.csv → held-out strains + interaction labels + sc_*/pc_* features
 ```
 
 **Rule:** `train_merged_features.csv` must not contain any external-test strain IDs.
@@ -458,6 +461,21 @@ genophi predict \
 ```
 
 **Option 2: New strain FASTAs** → see [Workflow C](#9-workflow-c-external-inference-saved-models).
+
+**Option 3: Evaluate on labeled external merged features** (recommended when you already have `strain`, `phage`, `interaction`, and `sc_*` / `pc_*` columns for held-out bacteria):
+
+```bash
+python scripts/evaluate_saved_model.py \
+    --feature_table /path/to/external_merged_features.csv \
+    --model_dir /path/to/training_output/modeling_results/cutoff_10/ \
+    --output_dir /path/to/external_evaluation/ \
+    --phenotype_column interaction \
+    --strain_column strain \
+    --phage_column phage \
+    --threads 8
+```
+
+See [§9.5](#95-evaluate-saved-models-on-labeled-merged-features) for required inputs, outputs, and how this differs from `genophi predict`.
 
 ### Workflow A output layout
 
@@ -684,15 +702,38 @@ Code: `genophi/workflows/prediction_workflow.py`
 - Loads all `run_*/best_model.pkl` models in `model_dir`.
 - Aggregates median confidence per (strain, phage) pair.
 - Output: `{strain}_median_predictions.csv` with `Final_Prediction` and `Confidence`.
+- **No built-in metrics:** `genophi predict` does not compare predictions to ground truth. Use [§9.5](#95-evaluate-saved-models-on-labeled-merged-features) when labels are available.
 
-### Evaluating external predictions (saved models + labeled merged features)
+### 9.5 Evaluate saved models on labeled merged features
 
-Use `scripts/evaluate_saved_model.py` when you have:
+Use `scripts/evaluate_saved_model.py` when your goal is to **test a trained model on new data** and **measure performance** — not just generate predictions.
 
-- A **merged feature table** with `strain`, `phage`, ground-truth labels, and all feature columns
-- A trained **model directory** (`modeling_results/cutoff_N/` with `run_*/best_model.pkl`)
+This is the right tool when you already have a **single merged feature CSV** for external (held-out) bacteria with:
 
-The script loads all ensemble runs, aggregates **median probability** per pair (same as `genophi predict`), and writes metrics and plots. The saved CatBoost models filter features via `model.feature_names_` — your table may contain extra columns; only required features are used.
+| Requirement | Details |
+|-------------|---------|
+| Metadata | `strain`, `phage`, and a ground-truth label column (default: `interaction`, 0/1) |
+| Features | `sc_*` and `pc_*` columns (same protein-family naming as training) |
+| Holdout | Strain IDs **not** present in the training merged table |
+| Models | All `run_*/best_model.pkl` files under `modeling_results/cutoff_N/` |
+
+You do **not** need to pass `--feature_table` from feature selection separately: each saved CatBoost model carries its own `feature_names_`. The script (via `predict_interactions`) keeps only the features each model expects. Extra columns in your CSV are ignored; **missing** required features raise an error.
+
+#### `evaluate_saved_model.py` vs `genophi predict`
+
+| | `scripts/evaluate_saved_model.py` | `genophi predict` |
+|---|-----------------------------------|-------------------|
+| Input | One **merged** table (strain + phage + features + labels) | Separate strain/phage feature tables merged at predict time |
+| Labels required | Yes (for metrics) | No |
+| Ensemble | Median probability across all `run_*/best_model.pkl` | Same |
+| Outputs | Predictions + global metrics + hit@k / precision@k + plots | Prediction CSVs only |
+| Typical use | External test set with known interactions | Deployment / unlabeled screening |
+
+#### Step-by-step workflow
+
+1. **Train** on training-only data (`genophi select-and-train` or `protein-family-workflow`). Pick the best cutoff from `model_performance_metrics.csv` (e.g. `cutoff_3`).
+2. **Build** `external_merged_features.csv` for held-out strains — same column layout as `train_merged_features.csv`, including true `interaction` labels. You can produce this by merging external strain/phage feature tables the same way as in training, or by subsetting a master table after excluding training strain IDs.
+3. **Evaluate** with the script (from the GenoPHI repository root):
 
 ```bash
 conda activate genophi
@@ -705,18 +746,34 @@ python scripts/evaluate_saved_model.py \
     --strain_column strain \
     --phage_column phage \
     --threads 8 \
-    --threshold 0.5
+    --threshold 0.5 \
+    --verbose
 ```
 
-**Outputs in `output_dir/`:**
+**Arguments:**
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--feature_table` / `-i` | Yes | Labeled merged CSV or parquet |
+| `--model_dir` / `-m` | Yes | e.g. `modeling_results/cutoff_10/` (contains `run_0/`, `run_1/`, …) |
+| `--output_dir` / `-o` | Yes | Where predictions, metrics, and plots are written |
+| `--phenotype_column` | No | Ground-truth column (default: `interaction`) |
+| `--strain_column` | No | Default: `strain` |
+| `--phage_column` | No | Default: `phage` |
+| `--threads` | No | CatBoost prediction threads (default: 4) |
+| `--threshold` | No | Probability cutoff for `Final_Prediction` (default: 0.5) |
+| `--verbose` / `-v` | No | Debug logging |
+
+#### Outputs in `output_dir/`
 
 | File | Description |
 |------|-------------|
-| `median_predictions.csv` | Per (strain, phage): `Confidence`, `Final_Prediction` |
-| `evaluation_pairs.csv` | Predictions merged with ground truth |
-| `evaluation_metrics.json` / `.csv` | Global + ranking metrics |
-| `per_strain_ranking_metrics.csv` | hit@k and precision@k per strain |
-| `predicted_probability_distribution.png` | Histogram of probabilities (overall + by true class) |
+| `all_run_predictions.csv` | Per-model probabilities for every (strain, phage) pair |
+| `median_predictions.csv` | Ensemble median `Confidence` and thresholded `Final_Prediction` |
+| `evaluation_pairs.csv` | Predictions joined with ground-truth labels |
+| `evaluation_metrics.json` / `.csv` | Global classification + averaged ranking metrics |
+| `per_strain_ranking_metrics.csv` | hit@k and precision@k for each strain |
+| `predicted_probability_distribution.png` | Histogram of probabilities (overall and by true class) |
 
 **Global metrics:** accuracy, precision (PPV), recall (sensitivity), specificity, NPV, F1, MCC, AUC-ROC, AUC-PRC (average precision), % predicted positive, confusion matrix counts.
 
@@ -727,7 +784,20 @@ python scripts/evaluate_saved_model.py \
 | `hit@k` (k=1…5) | Fraction of strains where ≥1 true positive appears in the top-k phages ranked by predicted probability | Strains with **≥1** true positive in the dataset |
 | `precision@k` (k=1…5) | Mean of `(true positives in top-k) / k` per strain | Strains with **≥k** total true positives |
 
-For prediction-only (no labels), use `genophi predict` as in section C4 above.
+#### Example (Klebsiella-style layout)
+
+```bash
+python scripts/evaluate_saved_model.py \
+    --feature_table /path/to/Klebsiella_external_merged_features.csv \
+    --model_dir results/Klebsiella_output_clustered/modeling_results/cutoff_3/ \
+    --output_dir results/Klebsiella_external_eval/ \
+    --phenotype_column interaction \
+    --threads 8
+```
+
+Review `external_evaluation/evaluation_metrics.csv` for a one-row summary; use `evaluation_pairs.csv` for per-pair error analysis.
+
+For **prediction only** (no labels), use `genophi predict` as in [§9.4](#c4--predict-from-pre-merged-external-feature-rows) above.
 
 ---
 
@@ -875,7 +945,7 @@ Edit these lists to add or remove cutoff values.
 
 ### Ensemble prediction
 
-`assign-predict` and `predict` load **all** `run_*/best_model.pkl` files and report median confidence across runs. This mirrors the internal multi-run design.
+`assign-predict`, `predict`, and `evaluate_saved_model.py` all load **all** `run_*/best_model.pkl` files and use **median probability** per (strain, phage) pair. This mirrors the internal multi-run design. Only `evaluate_saved_model.py` compares those predictions to ground-truth labels and writes full metric reports.
 
 ---
 
@@ -887,7 +957,8 @@ Edit these lists to add or remove cutoff values.
 | External test strains in training CSV | No manual holdout | Filter training CSV before `select-and-train` |
 | `filter_type must be a column` error | Missing `strain` column | Ensure merged table has `strain` column |
 | No `sc_*` columns / clustering fallback | Wrong feature prefixes | Strain features must be `sc_*`, phage `pc_*` |
-| Missing features at predict time | Feature name mismatch | Pass `--feature_table` with training cutoff CSV |
+| Missing features at predict time | Feature name mismatch | Ensure external merged table has same `sc_*` / `pc_*` names as training; models use `feature_names_` |
+| Missing features at evaluate time | Same as predict | All features in `best_model.pkl` must exist in `--feature_table` |
 | MMseqs2 not found | PATH issue | `conda activate genophi && which mmseqs` |
 | Out of memory | Large feature table | Reduce `--num_features`, increase `--max_ram`, use fewer SHAP runs, or subset data |
 | `protein-family-workflow` ignores clustering | Default is OFF | Explicitly pass `--use_clustering` |
@@ -901,7 +972,10 @@ Edit these lists to add or remove cutoff values.
 ```
 Do you already have a merged feature CSV?
 ├── YES → genophi select-and-train (Workflow A)
-│         └── External test → genophi predict OR assign-predict
+│         └── External test
+│             ├── Have labels in merged CSV → evaluate_saved_model.py (§9.5)
+│             ├── Feature rows only → genophi predict
+│             └── New FASTAs → genophi assign-predict
 └── NO  → Do you have .faa files?
           ├── YES → genophi protein-family-workflow (Workflow B)
           │         └── Reuse MMseqs? → add --clustering_dir
@@ -913,7 +987,9 @@ Phage–host prediction?
 
 New genomes at inference?
 ├── Have FASTA → genophi assign-predict + saved mmseqs_db
-└── Have feature rows → genophi predict
+└── Have feature rows
+    ├── Labeled merged table → evaluate_saved_model.py
+    └── Unlabeled → genophi predict
 ```
 
 ---
@@ -934,8 +1010,8 @@ After training:
 
 - [ ] Review `model_performance_metrics.csv` and pick best cutoff
 - [ ] Save `tmp/`, `strain/`, `phage/`, `modeling_results/cutoff_N/`, and cutoff feature table paths
-- [ ] Run `assign-predict` or `predict` on external data
-- [ ] Evaluate external predictions against held-out ground truth
+- [ ] Run external inference: `assign-predict` or `predict` (unlabeled), or `evaluate_saved_model.py` (labeled merged features)
+- [ ] Review `evaluation_metrics.csv` and `evaluation_pairs.csv` for held-out performance
 
 ---
 
