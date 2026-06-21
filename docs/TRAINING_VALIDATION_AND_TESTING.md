@@ -18,6 +18,7 @@ It complements the main [README](../README.md) with workflow-focused detail and 
 4. [Training vs Validation vs External Testing](#4-training-vs-validation-vs-external-testing)
 5. [Input Data Requirements](#5-input-data-requirements)
 6. [Splitting and Anti-Leakage Configuration](#6-splitting-and-anti-leakage-configuration)
+   - [6.5 Phage Lytic-Rate Imbalance and Dynamic Sample Weights](#65-phage-lytic-rate-imbalance-and-dynamic-sample-weights)
 7. [Workflow A: Pre-Merged Feature Table](#7-workflow-a-pre-merged-feature-table)
 8. [Workflow B: Full Protein-Family Pipeline](#8-workflow-b-full-protein-family-pipeline)
 9. [Workflow C: External Inference (Saved Models)](#9-workflow-c-external-inference-saved-models)
@@ -254,6 +255,81 @@ With clustering ON, closely related strains tend to stay on the same side of the
 | `train` | `strain` (via `--set_filter`) | **ON** |
 
 For phage–host work via `protein-family-workflow`, you **must** explicitly set `--filter_type strain --use_clustering`.
+
+### 6.5 Phage Lytic-Rate Imbalance and Dynamic Sample Weights
+
+In phage–host datasets, **phages differ strongly in how often they lyse hosts**: some infect many strains (high positive rate), others infect very few (low positive rate). If the model treats every row equally, it can overfit to phages with many positives and under-learn patterns for rarely lytic phages.
+
+GenoPHI addresses this with **phage-aware sample weights** during training (feature selection and modeling), controlled by:
+
+| Flag | Default | Effect |
+|------|---------|--------|
+| `--use_dynamic_weights` | OFF | When set, computes per-phage weights and passes them to CatBoost as `sample_weight` |
+| `--weights_method` | `log10` (`protein-family-workflow`, `select-and-train`) | Formula used to up-weight positive interactions for low-lytic phages |
+
+**Code:** `compute_phage_weights()` and `build_row_weights()` in `genophi/feature_selection.py` (~lines 530–604). Applied in:
+
+- `perform_rfe()` — weights during RFE feature selection (~668–683)
+- `train_and_evaluate()` — weights during CatBoost training (~977–994)
+- `grid_search()` — weights in every hyperparameter combination (~1104–1116)
+
+Weights are computed **per training fold** from `(phage, interaction)` counts in that fold only — they do not leak test-set information.
+
+#### How weights are calculated
+
+For each phage in the **training fold**, GenoPHI counts positive (`interaction=1`) and negative (`interaction=0`) rows, then assigns a weight to **positive** rows (negative rows always get weight `1.0`):
+
+| `weights_method` | Formula for positive-class weight | Intuition |
+|------------------|-----------------------------------|-----------|
+| `log10` | `max(1.0, log10(neg_count / (pos_count + 1)) + 1)` | Moderate correction; default in `protein-family-workflow` |
+| `inverse_frequency` | `total_count / (pos_count + 1)` | Stronger up-weighting for rarely lytic phages; good when lytic rates vary widely |
+| `balanced` | `(total_count - pos_count) / (pos_count + 1)` | Sklearn-style balance ratio per phage |
+
+If a phage has **zero** positive interactions in the training fold, positive weight is set to a small smoothing value (`1.0`) to avoid division-by-zero.
+
+**Example:** Phage A has 90 negatives and 10 positives; Phage B has 50 negatives and 50 positives. With `inverse_frequency`, a positive row for Phage A gets a higher weight than a positive row for Phage B, because lytic events for Phage A are rarer relative to its panel.
+
+#### When to enable
+
+| Situation | Recommendation |
+|-----------|----------------|
+| Phage–host matrix with uneven lytic rates across phages | `--use_dynamic_weights` **ON** |
+| Single-strain phenotype (no `phage` column) | Leave **OFF** (weights require `phage_column`) |
+| All phages have similar positive rates | Optional; may have little effect |
+| Large panels (e.g. Vibrio, Klebsiella) | **ON** with `--weights_method inverse_frequency` |
+
+#### CLI defaults differ by command
+
+| Command | `use_dynamic_weights` default | `weights_method` default |
+|---------|------------------------------|--------------------------|
+| `protein-family-workflow` | OFF | `log10` |
+| `select-and-train` | OFF | `log10` |
+| `train` / `select-features` | OFF | `inverse_frequency` (CLI) |
+
+You must **explicitly pass** `--use_dynamic_weights` to activate weighting.
+
+#### Example
+
+```bash
+genophi select-and-train \
+    --full_feature_table /path/to/train_merged_features.csv \
+    --output /path/to/training_output/ \
+    --filter_type strain \
+    --use_dynamic_weights \
+    --weights_method inverse_frequency \
+    --phage_column phage \
+    --phenotype_column interaction \
+    ...
+```
+
+#### Outputs and limitations
+
+- Per-run weight tables: `feature_selection/run_*/phage_weights.csv` and `modeling_results/cutoff_N/run_M/phage_weights.csv` (when weights are enabled).
+- **Not applied at inference:** `genophi predict` and `genophi assign-predict` do not re-weight samples; they use trained models as-is.
+- **Classification only:** weights are designed for binary `interaction` labels (0/1).
+- **Requires a `phage` column** in the merged feature table and `--phage_column` matching that name.
+
+> **Note:** The README sometimes describes `use_dynamic_weights` in the context of feature occurrence imbalance. In the current codebase, `--use_dynamic_weights` and `--weights_method` specifically implement **phage lytic-rate sample weighting**, not feature-frequency weighting. Feature rarity is handled separately via `--filter_by_cluster_presence` and `--use_feature_clustering`.
 
 ---
 
@@ -606,9 +682,49 @@ Code: `genophi/workflows/prediction_workflow.py`
 - Aggregates median confidence per (strain, phage) pair.
 - Output: `{strain}_median_predictions.csv` with `Final_Prediction` and `Confidence`.
 
-### Evaluating external predictions
+### Evaluating external predictions (saved models + labeled merged features)
 
-Compare `external_predictions/predict_results/strain_median_predictions.csv` to your held-out `external_ground_truth.csv` with standard metrics (MCC, AUC, etc.) outside GenoPHI.
+Use `scripts/evaluate_saved_model.py` when you have:
+
+- A **merged feature table** with `strain`, `phage`, ground-truth labels, and all feature columns
+- A trained **model directory** (`modeling_results/cutoff_N/` with `run_*/best_model.pkl`)
+
+The script loads all ensemble runs, aggregates **median probability** per pair (same as `genophi predict`), and writes metrics and plots. The saved CatBoost models filter features via `model.feature_names_` — your table may contain extra columns; only required features are used.
+
+```bash
+conda activate genophi
+
+python scripts/evaluate_saved_model.py \
+    --feature_table /path/to/external_merged_features.csv \
+    --model_dir /path/to/training_output/modeling_results/cutoff_10/ \
+    --output_dir /path/to/external_evaluation/ \
+    --phenotype_column interaction \
+    --strain_column strain \
+    --phage_column phage \
+    --threads 8 \
+    --threshold 0.5
+```
+
+**Outputs in `output_dir/`:**
+
+| File | Description |
+|------|-------------|
+| `median_predictions.csv` | Per (strain, phage): `Confidence`, `Final_Prediction` |
+| `evaluation_pairs.csv` | Predictions merged with ground truth |
+| `evaluation_metrics.json` / `.csv` | Global + ranking metrics |
+| `per_strain_ranking_metrics.csv` | hit@k and precision@k per strain |
+| `predicted_probability_distribution.png` | Histogram of probabilities (overall + by true class) |
+
+**Global metrics:** accuracy, precision (PPV), recall (sensitivity), specificity, NPV, F1, MCC, AUC-ROC, AUC-PRC (average precision), % predicted positive, confusion matrix counts.
+
+**Per-strain ranking metrics (averaged over eligible strains):**
+
+| Metric | Definition | Eligibility |
+|--------|------------|-------------|
+| `hit@k` (k=1…5) | Fraction of strains where ≥1 true positive appears in the top-k phages ranked by predicted probability | Strains with **≥1** true positive in the dataset |
+| `precision@k` (k=1…5) | Mean of `(true positives in top-k) / k` per strain | Strains with **≥k** total true positives |
+
+For prediction-only (no labels), use `genophi predict` as in section C4 above.
 
 ---
 
@@ -634,20 +750,75 @@ Compare `external_predictions/predict_results/strain_median_predictions.csv` to 
 | `feature_n_clusters` | 20 | 5–30 | `cluster_and_filter_features()` |
 | `feature_min_cluster_presence` | 2 | 2–3 | `cluster_and_filter_features()` |
 
-### 10.3 Feature selection and modeling
+### 10.3 Feature selection configuration
 
-| Parameter | Default | Suggested | Notes |
-|-----------|---------|-----------|-------|
-| `method` | `rfe` | `rfe` | Alternatives: `select_k_best`, `lasso`, `shap` (slow) |
-| `num_features` | auto | 50–150 | Auto-scales with row count in protein-family workflow |
-| `num_runs_fs` | 25 | 25–50 | More runs = stabler feature ranking |
-| `num_runs_modeling` | 50 | 50–100 | More runs = stabler performance estimates |
-| `use_dynamic_weights` | OFF | ON if phage panel imbalanced | Weights rare phages |
-| `weights_method` | `log10` / `inverse_frequency` | `inverse_frequency` | |
-| `task_type` | `classification` | `classification` | Use `regression` for continuous phenotypes |
-| `max_ram` | 8–16 GB | Match your machine | CatBoost RAM limit |
+| Parameter | Default | Suggested | Notes | Code |
+|-----------|---------|-----------|-------|------|
+| `method` | `rfe` | `rfe` | See method table below | `feature_selection.py` |
+| `num_features` | `none` (auto) | 50–150 | Auto in `protein-family-workflow`: 50 if &lt;500 rows, 100 if &lt;2000, else `rows/20` | `protein_family_workflow.py` ~344–350 |
+| `num_runs_fs` | 25 | 25–50 | Independent FS iterations with different random seeds | `run_feature_selection_iterations()` |
+| `max_features` | `none` | — | Cap features in cutoff tables | `generate_feature_tables()` |
+| `min_features` | `none` (auto) | — | Minimum features required for a cutoff to be kept | `generate_feature_tables()` |
+| `binary_data` | OFF (`select-and-train`) / ON (`protein-family-workflow`) | ON for presence/absence | Converts feature values to 0/1 in cutoff tables | `generate_feature_tables()` |
+| `check_feature_presence` | OFF | ON for phage–host | Drops features absent from train or test fold | `filter_data()` |
+| `filter_by_cluster_presence` | OFF | ON for phage–host | Drops features rare across strain/phage groups | `filter_data()` |
+| `min_cluster_presence` | 2 | 2–3 | Min groups/clusters a feature must appear in | `filter_data()` |
 
-### 10.4 MMseqs2 protein clustering
+**Feature selection methods** (`--method`):
+
+| Method | Speed | Best for | Notes |
+|--------|-------|----------|-------|
+| `rfe` | Medium | General use (recommended) | Recursive Feature Elimination with CatBoost |
+| `shap_rfe` | Slow, high RAM | Model-agnostic importance | RFE driven by SHAP values |
+| `select_k_best` | Fast | Quick screening | ANOVA F-test |
+| `chi_squared` | Fast | Classification only | χ² test |
+| `lasso` | Fast | Sparse models | L1 regularization |
+| `shap` | Slow, high RAM | Direct importance ranking | Select top features by SHAP |
+
+### 10.4 Modeling configuration
+
+| Parameter | Default | Suggested | Notes | Code |
+|-----------|---------|-----------|-------|------|
+| `num_runs_modeling` | 50 | 50–100 | Repeated train/test splits + grid search per cutoff table | `run_experiments()` |
+| `task_type` | `classification` | `classification` | `regression` for continuous phenotypes (optimizes R²) | `grid_search()` / `grid_search_regressor()` |
+| `phenotype_column` | `interaction` | your column name | Target variable; dropped from features | `load_and_prepare_data()` |
+| `sample_column` | `strain` | `strain` | Sample ID metadata column | `load_and_prepare_data()` |
+| `phage_column` | `phage` | `phage` | Required for phage–host; used in dynamic weights | `compute_phage_weights()` |
+| `use_dynamic_weights` | OFF | ON for uneven phage lytic rates | See [§6.5](#65-phage-lytic-rate-imbalance-and-dynamic-sample-weights) | `feature_selection.py` |
+| `weights_method` | `log10` | `inverse_frequency` | `log10`, `inverse_frequency`, `balanced` | `compute_phage_weights()` |
+| `use_shap` | OFF | ON for interpretability | Saves SHAP plots per modeling run; slower | `select_feature_modeling.py` |
+| `set_filter` | `strain` (`train` CLI) | `strain` | Same as `filter_type`; controls train/test split in `train` command | `filter_data()` |
+
+**CatBoost training behavior** (not CLI flags — fixed in code unless you edit source):
+
+| Setting | Value | Location |
+|---------|-------|----------|
+| Hyperparameter grid | `iterations` [500, 1000], `learning_rate` [0.05, 0.1], `depth` [4, 6] | `grid_search()` in `feature_selection.py` |
+| Best model selection | Highest **MCC** (classification) or **R²** (regression) on test fold | `grid_search()` |
+| Early stopping | 100 rounds on test fold (`eval_set`) | `train_and_evaluate()` ~997 |
+| Loss function | `Logloss` (classification), `RMSE` (regression) | `model_testing_select_MCC()` |
+
+### 10.5 Compute and system resources
+
+| Parameter | Default | Suggested | What it controls |
+|-----------|---------|-----------|------------------|
+| `--threads` | 4 | 8–16 (match CPU cores) | CatBoost `thread_count`; MMseqs2 parallelism in clustering/assignment; prediction `thread_count` |
+| `--max_ram` | 8 GB (`protein-family-workflow`), 16 GB (`select-and-train`, `cluster`) | 16–32 GB for large panels | CatBoost `used_ram_limit` (e.g. `16gb`); caps memory during FS and modeling |
+| `--verbose` / `-v` | OFF | ON while debugging | Enables DEBUG logging in CLI |
+| `--clear_tmp` | OFF | ON if disk is tight | Removes MMseqs2 temp files after workflow (`protein-family-workflow` only) |
+| `--tmp_dir` | `tmp` | fast local disk | MMseqs2 intermediate files |
+
+**Sizing guidance:**
+
+| Dataset scale | `threads` | `max_ram` | `num_runs_fs` | `num_runs_modeling` |
+|---------------|-----------|-----------|---------------|---------------------|
+| Demo / &lt;500 interactions | 4 | 8 | 5–10 | 10–25 |
+| Medium (e.g. Klebsiella) | 8 | 16 | 25 | 50 |
+| Large (e.g. Vibrio ~60k rows) | 12–16 | 32+ | 25–50 | 50–100 |
+
+SHAP-based methods (`shap`, `shap_rfe`) and `--use_shap` add substantial RAM and runtime beyond `--max_ram` alone.
+
+### 10.6 MMseqs2 protein clustering
 
 | Parameter | Default | Effect |
 |-----------|---------|--------|
@@ -656,7 +827,7 @@ Compare `external_predictions/predict_results/strain_median_predictions.csv` to 
 | `sensitivity` | 7.5 | Search sensitivity (higher = slower, more sensitive) |
 | `clustering_dir` | none | Reuse prior MMseqs2 outputs |
 
-### 10.5 Hyperparameter grid (advanced)
+### 10.7 Hyperparameter grid (advanced)
 
 To change CatBoost search space, edit `param_grid` in:
 
@@ -665,7 +836,7 @@ To change CatBoost search space, edit `param_grid` in:
 
 Default grid: `iterations` [500, 1000], `learning_rate` [0.05, 0.1], `depth` [4, 6].
 
-### 10.6 Feature cutoff list (advanced)
+### 10.8 Feature cutoff list (advanced)
 
 Cutoff thresholds (3, 4, 5, … 50) are hardcoded in:
 
@@ -715,8 +886,10 @@ Edit these lists to add or remove cutoff values.
 | No `sc_*` columns / clustering fallback | Wrong feature prefixes | Strain features must be `sc_*`, phage `pc_*` |
 | Missing features at predict time | Feature name mismatch | Pass `--feature_table` with training cutoff CSV |
 | MMseqs2 not found | PATH issue | `conda activate genophi && which mmseqs` |
-| Out of memory | Large feature table | Reduce `--num_features`, `--max_ram`, or subset data |
+| Out of memory | Large feature table | Reduce `--num_features`, increase `--max_ram`, use fewer SHAP runs, or subset data |
 | `protein-family-workflow` ignores clustering | Default is OFF | Explicitly pass `--use_clustering` |
+| Model biased toward high-lytic phages | Equal row weights | Enable `--use_dynamic_weights --weights_method inverse_frequency` |
+| Dynamic weights have no effect | No `phage` column or weights off | Ensure phage–host mode and pass `--use_dynamic_weights` |
 
 ---
 
@@ -750,6 +923,8 @@ Before training:
 - [ ] Training CSV contains **only** training strains/phages
 - [ ] External strains stored separately for inference
 - [ ] `--filter_type strain` and `--use_clustering` set (especially for `protein-family-workflow`)
+- [ ] `--use_dynamic_weights` set if phage lytic rates are uneven (see [§6.5](#65-phage-lytic-rate-imbalance-and-dynamic-sample-weights))
+- [ ] `--threads` and `--max_ram` sized for your dataset
 - [ ] Phenotype column names match CLI flags
 
 After training:
